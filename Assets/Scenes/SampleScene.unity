@@ -1498,6 +1498,7 @@ GameObject:
   - component: {fileID: 2138918605}
   - component: {fileID: 300000041}
   - component: {fileID: 300000042}
+  - component: {fileID: 2138918606}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -1694,6 +1695,26 @@ MonoBehaviour:
   aimInput: {fileID: 761465229}
   player: {fileID: 2138918600}
   potionLandingMarker: {fileID: 273279994}
+--- !u!114 &2138918606
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2138918598}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d3bd50418191439ba23c184bc540c92e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Miscellaneus.Game::PlayerDefeatController
+  playerHealth: {fileID: 2138918604}
+  playerMovement: {fileID: 2138918603}
+  playerBody: {fileID: 2138918602}
+  playerAttack: {fileID: 300000042}
+  potionAimInput: {fileID: 761465229}
+  enemyCombatState: {fileID: 300000036}
+  enemyTelegraph: {fileID: 300000037}
+  enemyStrike: {fileID: 300000038}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
