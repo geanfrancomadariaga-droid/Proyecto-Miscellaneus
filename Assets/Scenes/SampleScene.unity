@@ -581,6 +581,7 @@ GameObject:
   - component: {fileID: 300000034}
   - component: {fileID: 300000035}
   - component: {fileID: 300000036}
+  - component: {fileID: 300000037}
   m_Layer: 0
   m_Name: MeleeTestTarget
   m_TagString: Untagged
@@ -734,6 +735,24 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Miscellaneus.Game::EnemyCombatState
   playerAttack: {fileID: 300000042}
+--- !u!114 &300000037
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 300000031}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6bd0cece874c4829ab41ab735a6f7c68, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Miscellaneus.Game::EnemyMeleeTelegraph
+  player: {fileID: 2138918600}
+  meleeRange: 1.2
+  zoneWidth: 0.8
+  warningSeconds: 0.6
+  recoverySeconds: 1.8
+  sortingOrder: 20
 --- !u!120 &300000041
 LineRenderer:
   serializedVersion: 3
