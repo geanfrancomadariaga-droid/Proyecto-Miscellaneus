@@ -582,6 +582,7 @@ GameObject:
   - component: {fileID: 300000035}
   - component: {fileID: 300000036}
   - component: {fileID: 300000037}
+  - component: {fileID: 300000038}
   m_Layer: 0
   m_Name: MeleeTestTarget
   m_TagString: Untagged
@@ -753,6 +754,20 @@ MonoBehaviour:
   warningSeconds: 0.6
   recoverySeconds: 1.8
   sortingOrder: 20
+--- !u!114 &300000038
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 300000031}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2d864134cb964c349488ecbbd58f941c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Miscellaneus.Game::EnemyMeleeStrike
+  playerHealth: {fileID: 2138918604}
+  damage: 10
 --- !u!120 &300000041
 LineRenderer:
   serializedVersion: 3
@@ -1663,7 +1678,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3c61764cab017ca46b7d5a706c0ab2aa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Health
-  maxHealth: 100
+  maxHealth: 60
 --- !u!114 &2138918605
 MonoBehaviour:
   m_ObjectHideFlags: 0

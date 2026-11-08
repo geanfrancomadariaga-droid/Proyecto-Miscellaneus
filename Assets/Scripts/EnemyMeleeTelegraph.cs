@@ -30,6 +30,11 @@ public sealed class EnemyMeleeTelegraph : MonoBehaviour
     public bool IsWarning { get; private set; }
     public Vector2 LockedDirection { get; private set; }
     public Vector2 LockedCenter { get; private set; }
+    public Vector2 LockedSize { get; private set; }
+    public float LockedAngle { get; private set; }
+
+    // Centro, dimensiones completas y angulo en grados de la zona anunciada.
+    public event System.Action<Vector2, Vector2, float> WarningCompleted;
 
     private void Awake()
     {
@@ -61,7 +66,10 @@ public sealed class EnemyMeleeTelegraph : MonoBehaviour
         if (IsWarning)
         {
             if (now >= warningEndsAt)
+            {
                 CancelWarning();
+                WarningCompleted?.Invoke(LockedCenter, LockedSize, LockedAngle);
+            }
             return;
         }
 
@@ -72,12 +80,14 @@ public sealed class EnemyMeleeTelegraph : MonoBehaviour
 
         LockedDirection = offset.sqrMagnitude > 0.000001f ? offset.normalized : Vector2.down;
         LockedCenter = (Vector2)transform.position + LockedDirection * (range * 0.5f);
+        LockedSize = new Vector2(range, Mathf.Max(0.01f, zoneWidth));
+        LockedAngle = Mathf.Atan2(LockedDirection.y, LockedDirection.x) * Mathf.Rad2Deg;
         CreateVisualIfNeeded();
         // Objeto sin padre: ni el jugador ni el enemigo arrastran la zona fijada.
         zoneObject.transform.SetPositionAndRotation(
             new Vector3(LockedCenter.x, LockedCenter.y, transform.position.z),
-            Quaternion.Euler(0f, 0f, Mathf.Atan2(LockedDirection.y, LockedDirection.x) * Mathf.Rad2Deg));
-        zoneObject.transform.localScale = new Vector3(range, Mathf.Max(0.01f, zoneWidth), 1f);
+            Quaternion.Euler(0f, 0f, LockedAngle));
+        zoneObject.transform.localScale = new Vector3(LockedSize.x, LockedSize.y, 1f);
         zoneRenderer.sortingOrder = sortingOrder;
         SpriteRenderer enemySprite = GetComponent<SpriteRenderer>();
         zoneRenderer.sortingLayerID = enemySprite != null ? enemySprite.sortingLayerID : 0;
@@ -122,7 +132,7 @@ public sealed class EnemyMeleeTelegraph : MonoBehaviour
         zoneRenderer.sprite = zoneSprite;
     }
 
-    private void CancelWarning()
+    internal void CancelWarning()
     {
         IsWarning = false;
         if (zoneObject != null)
