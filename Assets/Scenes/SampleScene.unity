@@ -662,6 +662,7 @@ GameObject:
   - component: {fileID: 300000036}
   - component: {fileID: 300000037}
   - component: {fileID: 300000038}
+  - component: {fileID: 300000039}
   m_Layer: 0
   m_Name: MeleeTestTarget
   m_TagString: Untagged
@@ -847,6 +848,22 @@ MonoBehaviour:
   m_EditorClassIdentifier: Miscellaneus.Game::EnemyMeleeStrike
   playerHealth: {fileID: 2138918604}
   damage: 10
+--- !u!114 &300000039
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 300000031}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ad8b5f4903e473ea11fa20a60f4c891, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Miscellaneus.Game::EnemyVictoryController
+  enemyHealth: {fileID: 300000035}
+  enemyCombatState: {fileID: 300000036}
+  enemyTelegraph: {fileID: 300000037}
+  enemyStrike: {fileID: 300000038}
 --- !u!120 &300000041
 LineRenderer:
   serializedVersion: 3
