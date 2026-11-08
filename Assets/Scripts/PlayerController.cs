@@ -12,6 +12,9 @@ public class PlayerController : MonoBehaviour
     private InputAction moveAction;
     private Vector2 movementInput;
 
+    // Antes de moverse por primera vez, el jugador mira hacia abajo.
+    public Vector2 LastMovementDirection { get; private set; } = Vector2.down;
+
     private void Awake()
     {
         playerBody = GetComponent<Rigidbody2D>();
@@ -36,6 +39,8 @@ public class PlayerController : MonoBehaviour
     {
         // Limitar la magnitud evita que las diagonales sean mas rapidas.
         movementInput = Vector2.ClampMagnitude(moveAction.ReadValue<Vector2>(), 1f);
+        if (movementInput.sqrMagnitude > 0.0001f)
+            LastMovementDirection = movementInput.normalized;
     }
 
     private void FixedUpdate()
