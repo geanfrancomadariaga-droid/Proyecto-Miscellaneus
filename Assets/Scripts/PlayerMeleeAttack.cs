@@ -16,6 +16,9 @@ public sealed class PlayerMeleeAttack : MonoBehaviour
 
     private PlayerController player;
     private float hideFeedbackAt;
+    private int consecutiveAttacks;
+    private float lastAttackAt;
+    private float nextAttackAt;
     private readonly HashSet<Health> damaged = new HashSet<Health>();
 
     private void Awake()
@@ -41,8 +44,25 @@ public sealed class PlayerMeleeAttack : MonoBehaviour
 
     public void Attack()
     {
-        if (!isActiveAndEnabled)
+        AttackAt(Time.time);
+    }
+
+    // El tiempo se recibe para probar los limites sin esperas reales.
+    private void AttackAt(float now)
+    {
+        if (!isActiveAndEnabled || now < nextAttackAt)
             return;
+
+        // El bloqueo del sexto debe terminar antes de evaluar cualquier reinicio.
+        if (consecutiveAttacks == 6 ||
+            (consecutiveAttacks > 0 && now - lastAttackAt >= 2.5f))
+            consecutiveAttacks = 0;
+
+        consecutiveAttacks++;
+        lastAttackAt = now;
+        float recovery = consecutiveAttacks <= 2 ? 0.4f :
+            consecutiveAttacks <= 4 ? 0.8f : consecutiveAttacks == 5 ? 1.2f : 3f;
+        nextAttackAt = now + recovery;
 
         Vector2 center = (Vector2)transform.position + player.LastMovementDirection * reachOffset;
         damaged.Clear();
@@ -69,12 +89,12 @@ public sealed class PlayerMeleeAttack : MonoBehaviour
                 center.y + Mathf.Sin(angle) * hitRadius, 0f));
         }
         hitOutline.enabled = true;
-        hideFeedbackAt = Time.unscaledTime + feedbackSeconds;
+        hideFeedbackAt = now + feedbackSeconds;
     }
 
     private void Update()
     {
-        if (hitOutline != null && hitOutline.enabled && Time.unscaledTime >= hideFeedbackAt)
+        if (hitOutline != null && hitOutline.enabled && Time.time >= hideFeedbackAt)
             hitOutline.enabled = false;
     }
 
