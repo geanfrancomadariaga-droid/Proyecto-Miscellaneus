@@ -6,6 +6,9 @@ using UnityEngine.UI;
 [RequireComponent(typeof(PlayerController))]
 public sealed class PlayerMeleeAttack : MonoBehaviour
 {
+    // Se emite una vez por objetivo solo cuando el golpe reduce su salud.
+    public event System.Action<Health> HitConfirmed;
+
     [SerializeField] private Button attackButton;
     [SerializeField] private Health testTarget;
     [SerializeField] private Text targetHealthLabel;
@@ -73,7 +76,10 @@ public sealed class PlayerMeleeAttack : MonoBehaviour
             if (health == null || health.transform == transform ||
                 health.transform.IsChildOf(transform) || !damaged.Add(health))
                 continue;
+            int healthBefore = health.CurrentHealth;
             health.TakeDamage(5);
+            if (health != null && health.CurrentHealth < healthBefore)
+                HitConfirmed?.Invoke(health);
         }
 
         if (hitOutline == null)

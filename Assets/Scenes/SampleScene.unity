@@ -580,6 +580,7 @@ GameObject:
   - component: {fileID: 300000033}
   - component: {fileID: 300000034}
   - component: {fileID: 300000035}
+  - component: {fileID: 300000036}
   m_Layer: 0
   m_Name: MeleeTestTarget
   m_TagString: Untagged
@@ -720,6 +721,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Health
   maxHealth: 100
+--- !u!114 &300000036
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 300000031}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e8ced2b325384eb493f9a5ba8601dce6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Miscellaneus.Game::EnemyCombatState
+  playerAttack: {fileID: 300000042}
 --- !u!120 &300000041
 LineRenderer:
   serializedVersion: 3
