@@ -155,6 +155,39 @@ public class FireExplosionTests
     }
 
     [Test]
+    public void SetTarget_ReplacesPreviousTargetBeforeResolve()
+    {
+        player = new GameObject("ConfiguredExplosionTarget");
+        Health replacement = player.AddComponent<Health>();
+        player.AddComponent<CircleCollider2D>();
+        explosion.SetTarget(replacement);
+        explosion.Resolve();
+        AssertDamage(0, 0);
+        Assert.That(replacement.CurrentHealth, Is.EqualTo(90));
+    }
+
+    [Test]
+    public void SetTarget_NullIsSafe_AndAssignmentDoesNotResetResolution()
+    {
+        explosion.SetTarget(null);
+        Assert.DoesNotThrow(() => explosion.Resolve());
+        explosion.SetTarget(enemyHealth);
+        explosion.Resolve();
+        AssertDamage(0, 0);
+        LogAssert.NoUnexpectedReceived();
+    }
+
+    [Test]
+    public void SetTarget_AfterDamage_DoesNotAllowAnotherExplosion()
+    {
+        explosion.SetTarget(enemyHealth);
+        explosion.Resolve();
+        explosion.SetTarget(enemyHealth);
+        explosion.Resolve();
+        AssertDamage(10, 1);
+    }
+
+    [Test]
     public void DisabledCollider_DoesNotReceiveDamage()
     {
         enemyCollider.enabled = false;

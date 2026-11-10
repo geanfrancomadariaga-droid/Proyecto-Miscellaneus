@@ -12,6 +12,12 @@ public sealed class FireExplosion : MonoBehaviour
     private bool resolved;
     private readonly List<Collider2D> hits = new List<Collider2D>();
 
+    /// <summary>Configura el objetivo sin reiniciar una explosion ya resuelta.</summary>
+    public void SetTarget(Health target)
+    {
+        enemyHealth = target;
+    }
+
     /// <summary>Resuelve una sola vez, incluso si no alcanza al enemigo.</summary>
     public void Resolve()
     {
