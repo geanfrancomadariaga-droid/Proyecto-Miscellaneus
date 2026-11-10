@@ -1,6 +1,11 @@
 using System;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
+using UnityEngine.InputSystem.LowLevel;
+using UnityEngine.InputSystem.UI;
+using TouchPhase = UnityEngine.InputSystem.TouchPhase;
 
 /// <summary>Lee un gesto de apuntado UI; no lanza pociones.</summary>
 public sealed class PotionAimInput : MonoBehaviour, IPointerDownHandler,
@@ -24,6 +29,10 @@ public sealed class PotionAimInput : MonoBehaviour, IPointerDownHandler,
     private RectTransform canvasRect;
     private Camera gestureCamera;
     private Vector2 startPosition;
+    private TouchControl activeTouch;
+    private int activeTouchId;
+    private double activeTouchStart;
+    private IInputStateChangeMonitor touchMonitor;
 
     public void OnPointerDown(PointerEventData eventData)
     {
@@ -41,6 +50,29 @@ public sealed class PotionAimInput : MonoBehaviour, IPointerDownHandler,
         {
             ClearState();
             return;
+        }
+
+        if (eventData is ExtendedPointerEventData pointer && pointer.pointerType == UIPointerType.Touch)
+        {
+            // El pointerId de UI combina dispositivo e ID; no es el touchId.
+            if (pointer.device is Touchscreen screen && screen.added)
+                foreach (var touch in screen.touches)
+                    if (touch.touchId.ReadValue() == pointer.touchId && pointer.touchId != 0)
+                    {
+                        activeTouch = touch;
+                        break;
+                    }
+
+            if (activeTouch == null)
+            {
+                ClearState();
+                return;
+            }
+
+            activeTouchId = pointer.touchId;
+            activeTouchStart = activeTouch.startTime.ReadValue();
+            touchMonitor = InputState.AddChangeMonitor(activeTouch, OnTouchChanged);
+            InputSystem.onDeviceChange += OnTouchDeviceChange;
         }
 
         activePointerId = eventData.pointerId;
@@ -70,6 +102,15 @@ public sealed class PotionAimInput : MonoBehaviour, IPointerDownHandler,
     {
         if (!IsActivePointer(eventData))
             return;
+
+        // PointerUp tambien llega al reiniciar acciones. Solo Ended demuestra
+        // una liberacion tactil normal; Canceled, None o un reemplazo cancelan.
+        if (activeTouch != null && (!IsOriginalTouch() ||
+            activeTouch.phase.ReadValue() != TouchPhase.Ended))
+        {
+            CancelAim();
+            return;
+        }
 
         // Recalcula al soltar, incluso si no hubo eventos de arrastre.
         if (!TryCalculate(eventData, out var result))
@@ -126,8 +167,43 @@ public sealed class PotionAimInput : MonoBehaviour, IPointerDownHandler,
         AimCanceled?.Invoke();
     }
 
+    private bool IsOriginalTouch()
+    {
+        return activeTouch.device.added &&
+            activeTouch.touchId.ReadValue() == activeTouchId &&
+            activeTouch.startTime.ReadValue() == activeTouchStart;
+    }
+
+    private void OnTouchChanged(InputControl control, double time, InputEventPtr eventPtr, long monitorIndex)
+    {
+        // Observar cada cambio evita perder Canceled si el slot se reutiliza
+        // dentro de la misma actualizacion. No consumimos ni alteramos el evento.
+        if (IsAiming && activeTouch != null && (!IsOriginalTouch() ||
+            activeTouch.phase.ReadValue() == TouchPhase.Canceled ||
+            activeTouch.phase.ReadValue() == TouchPhase.None))
+            CancelAim();
+    }
+
+    private void OnTouchDeviceChange(InputDevice device, InputDeviceChange change)
+    {
+        if (activeTouch == null || device != activeTouch.device)
+            return;
+
+        if (change == InputDeviceChange.SoftReset || change == InputDeviceChange.HardReset ||
+            change == InputDeviceChange.Disabled || change == InputDeviceChange.Disconnected ||
+            change == InputDeviceChange.Removed)
+            CancelAim();
+    }
+
     private void ClearState()
     {
+        if (touchMonitor != null)
+            InputState.RemoveChangeMonitor(activeTouch, touchMonitor);
+        InputSystem.onDeviceChange -= OnTouchDeviceChange;
+        touchMonitor = null;
+        activeTouch = null;
+        activeTouchId = default;
+        activeTouchStart = default;
         IsAiming = false;
         activePointerId = default;
         CurrentResult = default;
