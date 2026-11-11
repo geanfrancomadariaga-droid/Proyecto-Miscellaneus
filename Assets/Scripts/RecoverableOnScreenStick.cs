@@ -3,7 +3,6 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
 using UnityEngine.InputSystem.Layouts;
-using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.InputSystem.OnScreen;
 
 /// <summary>
@@ -17,7 +16,7 @@ public sealed class RecoverableOnScreenStick : OnScreenControl
 
     [InputControl(layout = "Vector2")]
     [SerializeField] private string outputPath = "<Gamepad>/leftStick";
-    [Tooltip("Area UI de inicio y recuperacion. Obligatoria; no debe solaparse con controles derechos.")]
+    [Tooltip("Area UI de inicio. Obligatoria; no debe solaparse con controles derechos.")]
     [SerializeField] private RectTransform touchArea;
     [Tooltip("Recorrido en unidades locales del RectTransform, como en un Canvas escalado.")]
     [SerializeField, Min(1f)] private float movementRange = 50f;
@@ -36,7 +35,6 @@ public sealed class RecoverableOnScreenStick : OnScreenControl
     private double activeStart;
     private Vector2 origin;
     private Vector2 lastPosition;
-    private double lastSeenInputTime;
     private double recoveryDeadline;
     private bool baseline = true;
     private bool focused = true;
@@ -78,28 +76,35 @@ public sealed class RecoverableOnScreenStick : OnScreenControl
 
     private void Clear()
     {
-        SendValueToControl(Vector2.zero);
-        state = GestureState.Free;
-        activeId = 0;
-        activeStart = 0;
-        origin = lastPosition = Vector2.zero;
-        lastSeenInputTime = recoveryDeadline = 0;
+        ReleaseGesture();
         previous.Clear();
         screen = null;
         baseline = true;
     }
 
+    private void ReleaseGesture()
+    {
+        SendValueToControl(Vector2.zero);
+        state = GestureState.Free;
+        activeId = 0;
+        activeStart = 0;
+        origin = lastPosition = Vector2.zero;
+        recoveryDeadline = 0;
+    }
+
     private Camera EventCamera => canvas.renderMode == RenderMode.ScreenSpaceOverlay
         ? null : canvas.worldCamera;
 
-    private bool InLeftArea(Vector2 position)
+    private bool InLeftSide(Vector2 position)
     {
         return touchArea != null && canvas != null && touchArea.gameObject.activeInHierarchy
             && position.x >= 0f && position.x < Screen.width * leftBoundary
             && position.y >= 0f && position.y < Screen.height
-            && (canvas.renderMode == RenderMode.ScreenSpaceOverlay || canvas.worldCamera != null)
-            && RectTransformUtility.RectangleContainsScreenPoint(touchArea, position, EventCamera);
+            && (canvas.renderMode == RenderMode.ScreenSpaceOverlay || canvas.worldCamera != null);
     }
+
+    private bool InLeftArea(Vector2 position) => InLeftSide(position)
+        && RectTransformUtility.RectangleContainsScreenPoint(touchArea, position, EventCamera);
 
     private bool IsNew(TouchControl touch)
     {
@@ -155,29 +160,30 @@ public sealed class RecoverableOnScreenStick : OnScreenControl
             if (tracked != null)
             {
                 Vector2 position = tracked.position.ReadValue();
-                // Salir de la zona cancela: nunca se arrastra movimiento al control derecho.
-                if (!InLeftArea(position))
+                // El rectangulo limita el INICIO, no el recorrido de un dedo ya identificado.
+                // La mitad derecha sigue prohibida para no invadir sus controles.
+                if (!InLeftSide(position))
                 {
                     Clear();
                     return;
                 }
                 lastPosition = position;
-                lastSeenInputTime = InputState.currentTime;
                 WriteMovement(position);
                 RememberContacts();
                 return;
             }
             state = GestureState.RecoveryPending;
             recoveryDeadline = now + recoverySeconds;
-            SendValueToControl(Vector2.zero);
-            // Mantener un muestreo completo en cero, incluso si ya aparece un reemplazo.
-            return;
+            // Buscar en este mismo muestreo: un reemplazo verificable no necesita
+            // insertar un frame en cero. Sin candidato se detiene al final.
         }
 
-        SendValueToControl(Vector2.zero);
         if (state == GestureState.RecoveryPending && now > recoveryDeadline)
         {
-            Clear();
+            // Terminar la recuperacion no es un cambio de dispositivo/foco.
+            // No ignorar el proximo gesto nuevo con otro baseline.
+            ReleaseGesture();
+            RememberContacts();
             return;
         }
 
@@ -186,14 +192,18 @@ public sealed class RecoverableOnScreenStick : OnScreenControl
         foreach (var touch in screen.touches)
         {
             if (!touch.press.isPressed || !IsNew(touch)
-                || !InLeftArea(touch.startPosition.ReadValue())
-                || !InLeftArea(touch.position.ReadValue()))
+                || !InLeftSide(touch.startPosition.ReadValue())
+                || !InLeftSide(touch.position.ReadValue()))
+                continue;
+            if (state == GestureState.Free && !InLeftArea(touch.startPosition.ReadValue()))
                 continue;
             if (state == GestureState.RecoveryPending)
             {
-                // Excluir contactos anteriores, el ID perdido y candidatos alejados.
-                if (touch.touchId.ReadValue() == activeId
-                    || touch.startTime.ReadValue() < lastSeenInputTime
+                // La identidad es (ID, inicio): Android puede reutilizar un ID.
+                // IsNew excluye dedos ya presentes en el ultimo muestreo activo.
+                // No comparar el inicio con el reloj de Update: eventos encolados
+                // pueden ser anteriores a ese reloj sin ser contactos antiguos.
+                if (touch.startTime.ReadValue() < activeStart
                     || (touch.position.ReadValue() - lastPosition).sqrMagnitude
                         > recoveryRadiusPixels * recoveryRadiusPixels
                     || (touch.startPosition.ReadValue() - lastPosition).sqrMagnitude
@@ -219,9 +229,13 @@ public sealed class RecoverableOnScreenStick : OnScreenControl
             activeId = candidate.touchId.ReadValue();
             activeStart = candidate.startTime.ReadValue();
             lastPosition = candidate.position.ReadValue();
-            lastSeenInputTime = InputState.currentTime;
             state = GestureState.Active;
             WriteMovement(lastPosition);
+        }
+        else
+        {
+            // Nunca extrapolar movimiento mientras no haya contacto verificable.
+            SendValueToControl(Vector2.zero);
         }
         RememberContacts();
     }
