@@ -225,6 +225,220 @@ public class MovementTouchRegressionTests
         Assert.That(body.linearVelocity, Is.EqualTo(Vector2.zero));
     }
 
+    private Vector2 Reversed => origin - Vector2.right * (Screen.width * .05f);
+
+    private void AssertReversed()
+    {
+        Assert.That(stick.State, Is.EqualTo(RecoverableOnScreenStick.GestureState.Active));
+        Assert.That(((Gamepad)stick.control.device).leftStick.ReadValue().x, Is.LessThan(-.9f));
+        Assert.That(Read<InputAction>(movement, "moveAction").ReadValue<Vector2>().x, Is.LessThan(-.9f));
+        Assert.That(body.linearVelocity.x, Is.EqualTo(-4f).Within(.001f));
+        Assert.That(body.linearVelocity.y, Is.EqualTo(0f).Within(.001f));
+        Assert.That(movement.LastMovementDirection, Is.EqualTo(Vector2.left));
+    }
+
+    [TestCase(0)] // Sin X.
+    [TestCase(1)] // Down e inversion en el mismo muestreo.
+    [TestCase(2)] // Inversion con X sostenido.
+    [TestCase(3)] // Up e inversion en el mismo muestreo.
+    [TestCase(4)] // Inversion despues de procesar Up.
+    public void RapidReversal_XPhases_PreserveLeftIdentity(int scenario)
+    {
+        BeginMovement();
+        var left = screen.touches[0];
+        double start = left.startTime.ReadValue();
+        if (scenario >= 2) Touch(22, TouchPhase.Began, buttonPosition);
+        if (scenario == 1) Queue(22, TouchPhase.Began, buttonPosition);
+        if (scenario == 3) Queue(22, TouchPhase.Ended, buttonPosition);
+        if (scenario == 4) Touch(22, TouchPhase.Ended, buttonPosition);
+        Queue(11, TouchPhase.Moved, Reversed);
+        Pump();
+        AssertReversed();
+        Assert.That(left.touchId.ReadValue(), Is.EqualTo(11));
+        Assert.That(left.startTime.ReadValue(), Is.EqualTo(start));
+        Assert.That(left.startPosition.ReadValue(), Is.EqualTo(origin));
+        Assert.That(left.press.isPressed, Is.True);
+        Assert.That(clicks, Is.EqualTo(scenario >= 3 ? 1 : 0));
+        if (scenario == 1 || scenario == 2)
+        {
+            Touch(22, TouchPhase.Ended, buttonPosition);
+            AssertReversed();
+            Assert.That(clicks, Is.EqualTo(1));
+        }
+        Touch(11, TouchPhase.Ended, Reversed);
+        AssertStopped();
+    }
+
+    [UnityTest]
+    public IEnumerator RepeatedXAndReversal_ActuallyDisplacesInBothDirections()
+    {
+        BeginMovement();
+        for (int i = 0; i < 4; i++)
+        {
+            Queue(22, TouchPhase.Began, buttonPosition);
+            Queue(11, TouchPhase.Moved, Reversed);
+            Pump();
+            AssertReversed();
+            Assert.That(clicks, Is.EqualTo(i));
+            float before = body.position.x;
+            yield return new WaitForFixedUpdate();
+            yield return null;
+            Assert.That(body.position.x, Is.LessThan(before));
+            Queue(22, TouchPhase.Ended, buttonPosition);
+            Queue(11, TouchPhase.Moved, dragged);
+            Pump();
+            AssertMoving();
+            Assert.That(clicks, Is.EqualTo(i + 1));
+            before = body.position.x;
+            yield return new WaitForFixedUpdate();
+            yield return null;
+            Assert.That(body.position.x, Is.GreaterThan(before));
+        }
+        Touch(11, TouchPhase.Ended, dragged);
+        AssertStopped();
+    }
+
+    [TestCase(11, false)]
+    [TestCase(12, false)]
+    [TestCase(11, true)]
+    [TestCase(12, true)]
+    public void ReplacementBeginsNearby_ThenReversesBeforeObservation(int replacementId, bool gap)
+    {
+        BeginMovement();
+        Touch(22, TouchPhase.Began, buttonPosition);
+        Assert.That(Vector2.Distance(dragged, Reversed), Is.GreaterThan(40f),
+            "Ejecutar con Game View de al menos 401 pixeles de ancho.");
+        Queue(11, TouchPhase.Canceled, dragged);
+        if (gap)
+        {
+            Pump();
+            AssertStopped();
+        }
+        Queue(replacementId, TouchPhase.Began, dragged);
+        Queue(replacementId, TouchPhase.Moved, Reversed);
+        Queue(22, TouchPhase.Ended, buttonPosition);
+        Pump();
+        AssertReversed();
+        Assert.That(clicks, Is.EqualTo(1));
+        Pump();
+        AssertReversed(); // No requiere levantar y volver a apoyar.
+        Touch(replacementId, TouchPhase.Ended, Reversed);
+        AssertStopped();
+    }
+
+    [TestCase(TouchPhase.Moved)]
+    [TestCase(TouchPhase.Stationary)]
+    public void CanceledContact_ReturnsWithoutBegan_PreservesIdentity(TouchPhase phase)
+    {
+        BeginMovement();
+        // Alejarse mas de 40 px del origen demuestra que startPosition no es
+        // el punto de reaparicion. Se usan eventos reales, no campos del stick.
+        var far = new Vector2(Screen.width * .45f, origin.y);
+        Touch(11, TouchPhase.Moved, far);
+        double start = screen.touches[0].startTime.ReadValue();
+        Touch(22, TouchPhase.Began, buttonPosition);
+        Touch(11, TouchPhase.Canceled, far);
+        AssertStopped();
+        Queue(11, phase, phase == TouchPhase.Moved ? Reversed : far);
+        Queue(22, TouchPhase.Ended, buttonPosition);
+        Pump();
+        Assert.That(screen.touches[0].startTime.ReadValue(), Is.EqualTo(start));
+        Assert.That(screen.touches[0].startPosition.ReadValue(), Is.EqualTo(origin));
+        if (phase == TouchPhase.Stationary) AssertMoving();
+        Touch(11, TouchPhase.Moved, Reversed);
+        AssertReversed();
+        Touch(11, TouchPhase.Ended, Reversed);
+        for (int i = 0; i < 4; i++) Pump();
+        AssertStopped();
+    }
+
+    [Test]
+    public void UnknownIdMovedWithoutBegan_IsIgnoredByTouchscreen()
+    {
+        BeginMovement();
+        Touch(22, TouchPhase.Began, buttonPosition);
+        Touch(11, TouchPhase.Canceled, dragged);
+        Touch(77, TouchPhase.Moved, Reversed);
+        AssertStopped(); // El stick no puede recuperar un evento descartado por Touchscreen.
+        foreach (var touch in screen.touches)
+            Assert.That(touch.press.isPressed && touch.touchId.ReadValue() == 77, Is.False);
+    }
+
+    [Test]
+    public void RightReplacementStartingOnX_CannotRecoverEvenAfterMovingLeft()
+    {
+        BeginMovement();
+        Queue(11, TouchPhase.Canceled, dragged);
+        Queue(22, TouchPhase.Began, buttonPosition);
+        Queue(22, TouchPhase.Moved, Reversed);
+        Pump();
+        AssertStopped();
+        Pump();
+        AssertStopped();
+    }
+
+    [Test]
+    public void ReversalAndX_WithRealBombAndFire_ConsumesOneChargeAndHits()
+    {
+        var template = new GameObject("MovementRegressionBomb");
+        var source = template.AddComponent<BombProjectile>();
+        source.enabled = false; // Avance determinista, tambien en el clon.
+        template.AddComponent<FireExplosion>();
+        var throwObject = new GameObject("MovementRegressionThrow");
+        throwObject.SetActive(false);
+        var thrower = throwObject.AddComponent<PotionThrowController>();
+        var charges = playerObject.AddComponent<EquippedPotionCharges>();
+        charges.Initialize(3);
+        Set(thrower, "aimInput", aim);
+        Set(thrower, "charges", charges);
+        Set(thrower, "playerHealth", health);
+        Set(thrower, "enemyHealth", enemyHealth);
+        Set(thrower, "projectilePrefab", source);
+        BombProjectile launched = null;
+        try
+        {
+            throwObject.SetActive(true);
+            BeginMovement();
+            Touch(33, TouchPhase.Began, aimPosition);
+            Touch(33, TouchPhase.Moved, aimPosition + Vector2.right * 50f);
+            Assert.That(aim.IsAiming && aim.CurrentResult.IsValid, Is.True);
+            var result = aim.CurrentResult;
+            Queue(22, TouchPhase.Began, buttonPosition);
+            Queue(11, TouchPhase.Moved, Reversed);
+            Pump();
+            AssertReversed();
+            Touch(22, TouchPhase.Ended, buttonPosition);
+            Assert.That(clicks, Is.EqualTo(1));
+            Assert.That(aim.CurrentResult.Direction, Is.EqualTo(result.Direction));
+            Assert.That(charges.RemainingCharges, Is.EqualTo(3));
+            // X golpeo lejos del enemigo. Situarlo ahora en el destino de la bomba.
+            enemyObject.transform.position = playerObject.transform.position
+                + (Vector3)(result.Direction * result.Distance);
+            Touch(33, TouchPhase.Ended, aimPosition + Vector2.right * 50f);
+            Assert.That(aimFinished, Is.EqualTo(1));
+            Assert.That(charges.RemainingCharges, Is.EqualTo(2));
+            var bombs = new List<BombProjectile>();
+            foreach (var bomb in Object.FindObjectsByType<BombProjectile>(FindObjectsSortMode.None))
+                if (bomb.name == "MovementRegressionBomb(Clone)") bombs.Add(bomb);
+            Assert.That(bombs.Count, Is.EqualTo(1));
+            launched = bombs[0];
+            launched.Advance(1f);
+            Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(90));
+            AssertReversed();
+            Touch(11, TouchPhase.Ended, Reversed);
+            AssertStopped();
+        }
+        finally
+        {
+            Object.DestroyImmediate(throwObject);
+            // Limpiar incluso si una asercion fallo antes de encontrar el clon.
+            foreach (var bomb in Object.FindObjectsByType<BombProjectile>(FindObjectsSortMode.None))
+                if (bomb.name == "MovementRegressionBomb(Clone)")
+                    Object.DestroyImmediate(bomb.gameObject);
+            Object.DestroyImmediate(template);
+        }
+    }
+
     [UnityTest]
     public IEnumerator SingleFinger_ActuallyDisplacesBody_ThenStopsOnRelease()
     {

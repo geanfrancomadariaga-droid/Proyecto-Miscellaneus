@@ -112,6 +112,9 @@ public sealed class RecoverableOnScreenStick : OnScreenControl
             || start != touch.startTime.ReadValue();
     }
 
+    private bool IsTracked(TouchControl touch) => touch.touchId.ReadValue() == activeId
+        && touch.startTime.ReadValue() == activeStart;
+
     private void RememberContacts()
     {
         previous.Clear();
@@ -154,8 +157,7 @@ public sealed class RecoverableOnScreenStick : OnScreenControl
         {
             TouchControl tracked = null;
             foreach (var touch in screen.touches)
-                if (touch.press.isPressed && touch.touchId.ReadValue() == activeId
-                    && touch.startTime.ReadValue() == activeStart)
+                if (touch.press.isPressed && IsTracked(touch))
                     tracked = touch;
             if (tracked != null)
             {
@@ -191,21 +193,22 @@ public sealed class RecoverableOnScreenStick : OnScreenControl
         int count = 0;
         foreach (var touch in screen.touches)
         {
-            if (!touch.press.isPressed || !IsNew(touch)
+            bool returning = state == GestureState.RecoveryPending && IsTracked(touch);
+            if (!touch.press.isPressed || (!returning && !IsNew(touch))
                 || !InLeftSide(touch.startPosition.ReadValue())
                 || !InLeftSide(touch.position.ReadValue()))
                 continue;
             if (state == GestureState.Free && !InLeftArea(touch.startPosition.ReadValue()))
                 continue;
-            if (state == GestureState.RecoveryPending)
+            if (state == GestureState.RecoveryPending && !returning)
             {
                 // La identidad es (ID, inicio): Android puede reutilizar un ID.
                 // IsNew excluye dedos ya presentes en el ultimo muestreo activo.
-                // No comparar el inicio con el reloj de Update: eventos encolados
-                // pueden ser anteriores a ese reloj sin ser contactos antiguos.
+                // Validar donde REAPARECIO, no cuanto se movio despues: Began y
+                // Moved pueden procesarse antes del mismo Update al invertir.
+                // El mismo (ID, inicio) puede volver con Moved sin otro Began;
+                // su startPosition sigue siendo el origen del gesto, no la perdida.
                 if (touch.startTime.ReadValue() < activeStart
-                    || (touch.position.ReadValue() - lastPosition).sqrMagnitude
-                        > recoveryRadiusPixels * recoveryRadiusPixels
                     || (touch.startPosition.ReadValue() - lastPosition).sqrMagnitude
                         > recoveryRadiusPixels * recoveryRadiusPixels)
                 {
