@@ -114,6 +114,231 @@ public class PotionThrowControllerTests
         LogAssert.NoUnexpectedReceived();
     }
 
+    private PotionFormula Capture => (PotionFormula)typeof(PotionThrowController)
+        .GetField("capturedFormula", BindingFlags.Instance | BindingFlags.NonPublic)
+        .GetValue(controller);
+
+    [Test]
+    public void Begin_CapturesSelectedReference_WithoutConsuming()
+    {
+        PotionFormula selected = charges.SelectedFormula;
+        BeginAim();
+        Assert.That(Capture, Is.SameAs(selected));
+        AssertNoThrow();
+    }
+
+    [UnityTest]
+    public IEnumerator FireThenSelectFrost_ConsumesFire_AndFlightStillDealsTenDamage()
+    {
+        var frost = new PotionFormula(PotionBase.Bomba, PotionEffect.Escarcha);
+        Assert.That(charges.TryAdd(frost, 2), Is.True);
+        var data = BeginAim();
+        PotionFormula captured = Capture;
+        Assert.That(charges.TrySelectNext(), Is.True);
+        Assert.That(charges.SelectedFormula, Is.SameAs(frost));
+        Assert.That(Capture, Is.SameAs(captured));
+        Release(data, Vector2.right * 100f);
+        Assert.That(Capture, Is.Null);
+        Assert.That(charges.GetCharges(PotionEffect.Fuego), Is.EqualTo(2));
+        Assert.That(charges.GetCharges(PotionEffect.Escarcha), Is.EqualTo(2));
+        var bomb = Bombs().Single();
+        Assert.That(charges.TrySelectNext(), Is.True); // Cambiar tambien durante el vuelo.
+        bomb.Advance(0.5f);
+        Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(90));
+        yield return null;
+        Assert.That(bomb == null, Is.True);
+    }
+
+    [TestCase(PotionBase.Bomba, PotionEffect.Escarcha, PotionModifier.Ninguno)]
+    [TestCase(PotionBase.Bomba, PotionEffect.Savia, PotionModifier.Ninguno)]
+    [TestCase(PotionBase.Bomba, PotionEffect.Escarcha, PotionModifier.Doble)]
+    [TestCase(PotionBase.Vial, PotionEffect.Fuego, PotionModifier.Ninguno)]
+    [TestCase(PotionBase.Vial, PotionEffect.Fuego, PotionModifier.Doble)]
+    [TestCase(PotionBase.Vial, PotionEffect.Escarcha, PotionModifier.Ninguno)]
+    [TestCase(PotionBase.Vial, PotionEffect.Escarcha, PotionModifier.Doble)]
+    [TestCase(PotionBase.Vial, PotionEffect.Savia, PotionModifier.Ninguno)]
+    public void UnsupportedFormula_DoesNotThrowOrConsume(PotionBase potionBase,
+        PotionEffect effect, PotionModifier modifier)
+    {
+        charges.Initialize(0);
+        var formula = new PotionFormula(potionBase, effect, modifier);
+        Assert.That(charges.TryAdd(formula, 2), Is.True);
+        Throw();
+        Assert.That(charges.GetCharges(effect), Is.EqualTo(2));
+        Assert.That(charges.SelectedFormula, Is.SameAs(formula));
+        Assert.That(Bombs(), Is.Empty);
+        Assert.That(Capture, Is.Null);
+        Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(100));
+    }
+
+    [TestCase(PotionEffect.Escarcha)]
+    [TestCase(PotionEffect.Savia)]
+    public void UnsupportedThenSelectFire_DoesNotSubstituteFire(PotionEffect effect)
+    {
+        var formula = new PotionFormula(PotionBase.Bomba, effect);
+        Assert.That(charges.TryAdd(formula, 2), Is.True);
+        Assert.That(charges.TrySelectNext(), Is.True);
+        Assert.That(charges.SelectedFormula, Is.SameAs(formula));
+        var data = BeginAim();
+        Assert.That(charges.TrySelectNext(), Is.True);
+        Assert.That(charges.SelectedElement, Is.EqualTo(PotionEffect.Fuego));
+        Release(data, Vector2.right * 100f);
+        AssertNoThrow();
+        Assert.That(charges.GetCharges(effect), Is.EqualTo(2));
+        Assert.That(Capture, Is.Null);
+    }
+
+    [Test]
+    public void NoSelectionThenRefill_DoesNotArmCurrentGesture()
+    {
+        charges.Initialize(0);
+        var data = BeginAim();
+        Assert.That(Capture, Is.Null);
+        charges.Initialize(3);
+        Release(data, Vector2.right * 100f);
+        AssertNoThrow();
+        Throw(); // La recarga solo habilita un gesto nuevo.
+        Assert.That(charges.RemainingCharges, Is.EqualTo(2));
+        Assert.That(Bombs(), Has.Length.EqualTo(1));
+    }
+
+    [UnityTest]
+    public IEnumerator CapturedReserveExhausted_DoesNotConsumeAnotherFormula()
+    {
+        return CapturedReserveExhaustedOrReplaced_DoesNotConsumeAnotherFormula(false);
+    }
+
+    [UnityTest]
+    public IEnumerator CapturedReserveReplaced_DoesNotConsumeAnotherFormula()
+    {
+        return CapturedReserveExhaustedOrReplaced_DoesNotConsumeAnotherFormula(true);
+    }
+
+    private IEnumerator CapturedReserveExhaustedOrReplaced_DoesNotConsumeAnotherFormula(bool replace)
+    {
+        charges.Initialize(1);
+        var frost = new PotionFormula(PotionBase.Bomba, PotionEffect.Escarcha);
+        Assert.That(charges.TryAdd(frost, 2), Is.True);
+        var data = BeginAim();
+        Assert.That(charges.TryConsume(Capture), Is.True);
+        Assert.That(charges.SelectedFormula, Is.SameAs(frost));
+        if (replace)
+            Assert.That(charges.TryAdd(new PotionFormula(PotionBase.Vial, PotionEffect.Fuego), 4), Is.True);
+        Release(data, Vector2.right * 100f);
+        var rejected = Bombs().Single(); // Destroy se procesa al terminar el fotograma.
+        Vector3 origin = rejected.transform.position;
+        int arrivals = 0;
+        rejected.Arrived += () => arrivals++;
+        rejected.Advance(1f);
+        Assert.That(rejected.transform.position, Is.EqualTo(origin));
+        Assert.That(arrivals, Is.Zero);
+        Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(100));
+        var flights = (IDictionary)typeof(PotionThrowController)
+            .GetField("flights", BindingFlags.Instance | BindingFlags.NonPublic)
+            .GetValue(controller);
+        Assert.That(flights.Count, Is.Zero);
+        Assert.That(charges.GetCharges(PotionEffect.Fuego), Is.EqualTo(replace ? 4 : 0));
+        Assert.That(charges.GetCharges(PotionEffect.Escarcha), Is.EqualTo(2));
+        Assert.That(Capture, Is.Null);
+        yield return null;
+        Assert.That(rejected == null, Is.True);
+        Assert.That(Bombs(), Is.Empty);
+        Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(100));
+        LogAssert.NoUnexpectedReceived();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void CancelOrDeadZone_ClearsCapture_AndNextGestureUsesNewSelection(bool cancel)
+    {
+        Assert.That(charges.TryAdd(new PotionFormula(PotionBase.Bomba, PotionEffect.Escarcha), 2), Is.True);
+        var data = BeginAim();
+        if (cancel)
+            aim.OnCancel(new BaseEventData(events));
+        else
+            Release(data, Vector2.zero);
+        Assert.That(Capture, Is.Null);
+        AssertNoThrow();
+        Assert.That(charges.TrySelectNext(), Is.True);
+        Throw();
+        AssertNoThrow();
+        Assert.That(charges.GetCharges(PotionEffect.Escarcha), Is.EqualTo(2));
+        Assert.That(Capture, Is.Null);
+    }
+
+    [Test]
+    public void CompletedGesture_NextGestureDoesNotReuseFire()
+    {
+        Assert.That(charges.TryAdd(new PotionFormula(PotionBase.Bomba, PotionEffect.Escarcha), 2), Is.True);
+        Throw();
+        Assert.That(Capture, Is.Null);
+        Assert.That(charges.TrySelectNext(), Is.True);
+        Throw();
+        Assert.That(Bombs(), Has.Length.EqualTo(1));
+        Assert.That(charges.RemainingCharges, Is.EqualTo(2));
+        Assert.That(charges.GetCharges(PotionEffect.Escarcha), Is.EqualTo(2));
+        Assert.That(Capture, Is.Null);
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void DeathDuringAim_ClearsCaptureImmediately_AndRejectsRelease(bool playerDied)
+    {
+        var data = BeginAim();
+        Assert.That(Capture, Is.Not.Null);
+        (playerDied ? playerHealth : enemyHealth).TakeDamage(100);
+        Assert.That(Capture, Is.Null);
+        Release(data, Vector2.right * 100f);
+        Assert.That(charges.RemainingCharges, Is.EqualTo(3));
+        Assert.That(Bombs(), Is.Empty);
+    }
+
+    [Test]
+    public void DisableDuringAim_ReenableCannotRestoreCapture()
+    {
+        var data = BeginAim();
+        controller.enabled = false;
+        Assert.That(Capture, Is.Null);
+        controller.enabled = true;
+        Release(data, Vector2.right * 100f);
+        AssertNoThrow();
+        Throw();
+        Assert.That(charges.RemainingCharges, Is.EqualTo(2));
+        Assert.That(Bombs(), Has.Length.EqualTo(1));
+    }
+
+    [Test]
+    public void DefaultFiveCharges_AllowFiveThrows_AndRejectSixth()
+    {
+        var fresh = player.AddComponent<EquippedPotionCharges>();
+        Set("charges", fresh);
+        Assert.That(fresh.RemainingCharges, Is.EqualTo(5));
+        for (int i = 0; i < 5; i++)
+        {
+            Throw();
+            Assert.That(fresh.RemainingCharges, Is.EqualTo(4 - i));
+            Assert.That(Bombs(), Has.Length.EqualTo(i + 1));
+            Assert.That(Capture, Is.Null);
+        }
+        Throw();
+        Assert.That(fresh.RemainingCharges, Is.Zero);
+        Assert.That(Bombs(), Has.Length.EqualTo(5));
+    }
+
+    [Test]
+    public void LastFireThrow_AutomaticallySelectsFrost_WithoutImplementingItsEffect()
+    {
+        charges.Initialize(1);
+        var frost = new PotionFormula(PotionBase.Bomba, PotionEffect.Escarcha);
+        Assert.That(charges.TryAdd(frost, 2), Is.True);
+        Throw();
+        Assert.That(charges.SelectedFormula, Is.SameAs(frost));
+        Throw();
+        Assert.That(charges.RemainingCharges, Is.Zero);
+        Assert.That(charges.GetCharges(PotionEffect.Escarcha), Is.EqualTo(2));
+        Assert.That(Bombs(), Has.Length.EqualTo(1));
+    }
+
     [Test]
     public void ValidRelease_ConsumesOneChargeAndCreatesProjectile()
     {

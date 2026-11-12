@@ -14,6 +14,8 @@ public sealed class PotionThrowController : MonoBehaviour
     [SerializeField, Min(0f)] private float flightDuration = 0.5f;
 
     private PotionAimInput subscribedInput;
+    private Health subscribedPlayerHealth, subscribedEnemyHealth;
+    private PotionFormula capturedFormula;
     private readonly Dictionary<BombProjectile, Action> flights =
         new Dictionary<BombProjectile, Action>();
 
@@ -21,7 +23,29 @@ public sealed class PotionThrowController : MonoBehaviour
     {
         subscribedInput = aimInput;
         if (subscribedInput != null)
+        {
+            subscribedInput.AimStarted += OnAimStarted;
             subscribedInput.AimFinished += OnAimFinished;
+            subscribedInput.AimCanceled += ClearCapture;
+        }
+        subscribedPlayerHealth = playerHealth;
+        subscribedEnemyHealth = enemyHealth;
+        if (subscribedPlayerHealth != null)
+            subscribedPlayerHealth.Died += ClearCapture;
+        if (subscribedEnemyHealth != null)
+            subscribedEnemyHealth.Died += ClearCapture;
+    }
+
+    private void OnAimStarted()
+    {
+        ClearCapture();
+        if (isActiveAndEnabled && CombatIsActive() && aimInput != null && charges != null)
+            capturedFormula = charges.SelectedFormula;
+    }
+
+    private void ClearCapture()
+    {
+        capturedFormula = null;
     }
 
     private bool CombatIsActive()
@@ -32,8 +56,13 @@ public sealed class PotionThrowController : MonoBehaviour
 
     private void OnAimFinished(PotionAimCalculator.Result result)
     {
+        // Cerrar la captura incluso si la liberacion se rechaza; nunca releer la seleccion.
+        PotionFormula formula = capturedFormula;
+        ClearCapture();
         if (!isActiveAndEnabled || !result.IsValid || !CombatIsActive() ||
-            aimInput == null || charges == null || charges.RemainingCharges == 0 ||
+            aimInput == null || charges == null || formula == null ||
+            formula.Base != PotionBase.Bomba || formula.Effect != PotionEffect.Fuego ||
+            formula.Modifier != PotionModifier.Ninguno ||
             projectilePrefab == null ||
             !projectilePrefab.TryGetComponent<FireExplosion>(out _) ||
             float.IsNaN(flightDuration) || float.IsInfinity(flightDuration))
@@ -42,14 +71,18 @@ public sealed class PotionThrowController : MonoBehaviour
         Vector3 origin = playerHealth.transform.position;
         Vector3 destination = origin + (Vector3)(result.Direction * result.Distance);
         BombProjectile projectile = Instantiate(projectilePrefab, origin, Quaternion.identity);
-        FireExplosion explosion = projectile.GetComponent<FireExplosion>();
-        explosion.SetTarget(enemyHealth);
+        if (projectile == null)
+            return;
 
-        if (!charges.TryConsumeCharge())
+        // Validar la instancia antes de consumir; un rechazo nunca inicia el vuelo.
+        if (!projectile.TryGetComponent<FireExplosion>(out var explosion) ||
+            !charges.TryConsume(formula))
         {
             Destroy(projectile.gameObject);
             return;
         }
+
+        explosion.SetTarget(enemyHealth);
 
         Action arrived = () => OnArrived(projectile, explosion);
         flights.Add(projectile, arrived);
@@ -80,9 +113,19 @@ public sealed class PotionThrowController : MonoBehaviour
 
     private void OnDisable()
     {
+        ClearCapture();
         if (subscribedInput != null)
+        {
+            subscribedInput.AimStarted -= OnAimStarted;
             subscribedInput.AimFinished -= OnAimFinished;
+            subscribedInput.AimCanceled -= ClearCapture;
+        }
         subscribedInput = null;
+        if (subscribedPlayerHealth != null)
+            subscribedPlayerHealth.Died -= ClearCapture;
+        if (subscribedEnemyHealth != null)
+            subscribedEnemyHealth.Died -= ClearCapture;
+        subscribedPlayerHealth = subscribedEnemyHealth = null;
 
         foreach (var flight in flights)
         {
