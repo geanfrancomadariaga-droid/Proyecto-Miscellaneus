@@ -227,6 +227,53 @@ public class MovementTouchRegressionTests
 
     private Vector2 Reversed => origin - Vector2.right * (Screen.width * .05f);
 
+    [UnityTest]
+    public IEnumerator RepeatedXReversal_PlayerLoop_PreservesHeldContact()
+    {
+        // A diferencia de Pump, el PlayerLoop entrega los eventos y ejecuta los
+        // Update reales. No inyectar Canceled: X no demuestra una cancelacion.
+        Queue(11, TouchPhase.Began, origin);
+        yield return null;
+        yield return null;
+        Queue(11, TouchPhase.Moved, dragged);
+        yield return null;
+        yield return null;
+        yield return new WaitForFixedUpdate();
+        AssertMoving();
+        double start = screen.touches[0].startTime.ReadValue();
+        for (int i = 0; i < 6; i++)
+        {
+            // Alternar el orden de llegada entre ambos dedos.
+            if (i % 2 == 0) Queue(22, TouchPhase.Began, buttonPosition);
+            Queue(11, TouchPhase.Moved, Reversed);
+            if (i % 2 != 0) Queue(22, TouchPhase.Began, buttonPosition);
+            yield return null;
+            yield return null;
+            yield return new WaitForFixedUpdate();
+            AssertReversed();
+            Assert.That(clicks, Is.EqualTo(i));
+            Queue(22, TouchPhase.Ended, buttonPosition);
+            yield return null;
+            yield return null;
+            yield return new WaitForFixedUpdate();
+            AssertReversed();
+            Assert.That(clicks, Is.EqualTo(i + 1));
+            Assert.That(screen.touches[0].touchId.ReadValue(), Is.EqualTo(11));
+            Assert.That(screen.touches[0].startTime.ReadValue(), Is.EqualTo(start));
+            Assert.That(screen.touches[0].press.isPressed, Is.True);
+            Queue(11, TouchPhase.Moved, dragged);
+            yield return null;
+            yield return null;
+            yield return new WaitForFixedUpdate();
+            AssertMoving();
+        }
+        Queue(11, TouchPhase.Ended, dragged);
+        yield return null;
+        yield return null;
+        yield return new WaitForFixedUpdate();
+        AssertStopped();
+    }
+
     private void AssertReversed()
     {
         Assert.That(stick.State, Is.EqualTo(RecoverableOnScreenStick.GestureState.Active));
