@@ -16,6 +16,12 @@ public sealed class EquippedPotionCharges : MonoBehaviour
     /// <summary>Cargas compatibles con el lanzador actual de Bomba + Fuego.</summary>
     public int RemainingCharges => fireSlot.ActiveFormula == FireBomb ? fireSlot.Charges : 0;
 
+    public PotionEffect? SelectedElement { get; private set; }
+
+    /// <summary>Consulta la reserva seleccionada sin duplicar su formula.</summary>
+    public PotionFormula SelectedFormula => SelectedElement.HasValue
+        ? GetActiveFormula(SelectedElement.Value) : null;
+
     private void Awake()
     {
         Initialize(initialCharges);
@@ -30,6 +36,7 @@ public sealed class EquippedPotionCharges : MonoBehaviour
         fireSlot = new ElementPotionSlot(PotionEffect.Fuego);
         if (amount > 0)
             fireSlot.TryAdd(FireBomb, amount);
+        EnsureSelection();
     }
 
     /// <summary>Consume solo Bomba + Fuego; otra formula o una reserva vacia se rechazan.</summary>
@@ -53,13 +60,62 @@ public sealed class EquippedPotionCharges : MonoBehaviour
     /// <summary>Anade una elaboracion compatible; delega cantidades y desbordamientos en la reserva.</summary>
     public bool TryAdd(PotionFormula formula, int amount)
     {
-        return formula != null && (GetSlot(formula.Effect)?.TryAdd(formula, amount) ?? false);
+        if (formula == null || !(GetSlot(formula.Effect)?.TryAdd(formula, amount) ?? false))
+            return false;
+
+        EnsureSelection();
+        return true;
     }
 
     /// <summary>Consume una carga solo si coincide toda la formula solicitada.</summary>
     public bool TryConsume(PotionFormula formula)
     {
-        return formula != null && (GetSlot(formula.Effect)?.TryConsume(formula) ?? false);
+        if (formula == null || !(GetSlot(formula.Effect)?.TryConsume(formula) ?? false))
+            return false;
+
+        EnsureSelection();
+        return true;
+    }
+
+    /// <summary>Recorre Fuego, Escarcha y Savia; omite reservas sin cargas o formula.</summary>
+    public bool TrySelectNext()
+    {
+        // Sin seleccion, el recorrido comienza por Fuego.
+        PotionEffect candidate = SelectedElement ?? PotionEffect.Savia;
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            candidate = NextElement(candidate);
+            if (IsAvailable(candidate))
+            {
+                SelectedElement = candidate;
+                return true;
+            }
+        }
+
+        SelectedElement = null;
+        return false;
+    }
+
+    private void EnsureSelection()
+    {
+        if (!SelectedElement.HasValue || !IsAvailable(SelectedElement.Value))
+            TrySelectNext();
+    }
+
+    private bool IsAvailable(PotionEffect element)
+    {
+        ElementPotionSlot slot = GetSlot(element);
+        return slot != null && slot.Charges > 0 && slot.ActiveFormula != null;
+    }
+
+    private static PotionEffect NextElement(PotionEffect element)
+    {
+        switch (element)
+        {
+            case PotionEffect.Fuego: return PotionEffect.Escarcha;
+            case PotionEffect.Escarcha: return PotionEffect.Savia;
+            default: return PotionEffect.Fuego;
+        }
     }
 
     private ElementPotionSlot GetSlot(PotionEffect element)
