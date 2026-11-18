@@ -239,6 +239,205 @@ public class PotionCraftingControllerTests
         AssertElementUnchanged(before, PotionEffect.Savia);
     }
 
+    [Test]
+    public void EditableSelection_CyclesEachBlockWithoutChangingOthersOrResources()
+    {
+        var before = Capture();
+        AssertEditableSelection(PotionBase.Bomba, PotionEffect.Fuego, PotionModifier.Ninguno);
+        controller.ToggleModifier();
+        AssertEditableSelection(PotionBase.Bomba, PotionEffect.Fuego, PotionModifier.Doble);
+        AssertUnchanged(before);
+        controller.NextBase();
+        AssertEditableSelection(PotionBase.Vial, PotionEffect.Fuego, PotionModifier.Doble);
+        AssertUnchanged(before);
+        controller.NextBase();
+        AssertEditableSelection(PotionBase.Bomba, PotionEffect.Fuego, PotionModifier.Doble);
+        AssertUnchanged(before);
+        foreach (var effect in new[] { PotionEffect.Escarcha, PotionEffect.Savia, PotionEffect.Fuego })
+        {
+            controller.NextEffect();
+            AssertEditableSelection(PotionBase.Bomba, effect, PotionModifier.Doble);
+            AssertUnchanged(before);
+        }
+        controller.ToggleModifier();
+        AssertEditableSelection(PotionBase.Bomba, PotionEffect.Fuego, PotionModifier.Ninguno);
+        AssertUnchanged(before);
+    }
+
+    [TestCase(PotionEffect.Escarcha, false)]
+    [TestCase(PotionEffect.Savia, false)]
+    [TestCase(PotionEffect.Escarcha, true)]
+    [TestCase(PotionEffect.Savia, true)]
+    public void SelectedFormula_CraftsWithCompatibleOrEmptyReserve(PotionEffect effect, bool emptyReserve)
+    {
+        SelectCompatibleFormula(effect);
+        if (emptyReserve)
+            while (equipment.GetCharges(effect) > 0)
+                Assert.That(equipment.TryConsume(equipment.GetActiveFormula(effect)), Is.True);
+        var before = Capture();
+        controller.CraftSelectedFormula();
+        AssertSelectedCrafted(before, effect);
+        Assert.That(label.text, Is.EqualTo(effect == PotionEffect.Escarcha
+            ? "Vial de Escarcha + Doble preparado (+1)" : "Vial de Savia preparado (+1)"));
+    }
+
+    [Test]
+    public void InvalidSelection_RejectsThenCraftsAfterCorrection()
+    {
+        SelectCompatibleFormula(PotionEffect.Savia);
+        controller.ToggleModifier();
+        var before = Capture();
+        controller.CraftSelectedFormula();
+        AssertUnchanged(before);
+        AssertEditableSelection(PotionBase.Vial, PotionEffect.Savia, PotionModifier.Doble);
+        Assert.That(label.text, Is.EqualTo("La fórmula no es válida."));
+        controller.ToggleModifier();
+        controller.CraftSelectedFormula();
+        AssertSelectedCrafted(before, PotionEffect.Savia);
+    }
+
+    [TestCase(PotionEffect.Escarcha)]
+    [TestCase(PotionEffect.Savia)]
+    public void SelectedFormula_MissingIngredientsPreservesState(PotionEffect effect)
+    {
+        SelectCompatibleFormula(effect);
+        Assert.That(inventory.TryConsume(effect, inventory.GetQuantity(effect)), Is.True);
+        var before = Capture();
+        controller.CraftSelectedFormula();
+        AssertUnchanged(before);
+        AssertCompatibleSelection(effect);
+        Assert.That(label.text, Is.EqualTo($"No tienes ingredientes de {effect}."));
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void SelectedFireVial_RejectsAgainstInitialFiveBombs(bool doubleModifier)
+    {
+        controller.NextBase();
+        if (doubleModifier) controller.ToggleModifier();
+        var before = Capture();
+        controller.CraftSelectedFormula();
+        AssertUnchanged(before);
+        Assert.That(equipment.RemainingCharges, Is.EqualTo(5));
+        AssertEditableSelection(PotionBase.Vial, PotionEffect.Fuego,
+            doubleModifier ? PotionModifier.Doble : PotionModifier.Ninguno);
+        Assert.That(label.text, Is.EqualTo("Ya hay otra fórmula de Fuego con cargas."));
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void OriginalButton_CraftsFixedBombDespiteDifferentOrInvalidSelection(bool invalid)
+    {
+        SelectCompatibleFormula(PotionEffect.Savia);
+        if (invalid) controller.ToggleModifier();
+        buttonObject.SetActive(true);
+        var before = Capture();
+        button.onClick.Invoke();
+        AssertCrafted(before, 1);
+        AssertEditableSelection(PotionBase.Vial, PotionEffect.Savia,
+            invalid ? PotionModifier.Doble : PotionModifier.Ninguno);
+        Assert.That(label.text, Is.EqualTo("Bomba de Fuego preparada (+1)"));
+    }
+
+    [Test]
+    public void SelectionText_ShowsInitialAndEditedBlocksIncludingInvalidCombination()
+    {
+        Text selectionLabel = CreateSelectionText();
+        buttonObject.SetActive(true);
+        Assert.That(selectionLabel.text, Is.EqualTo("Bomba + Fuego + Ninguno"));
+        controller.ToggleModifier();
+        Assert.That(selectionLabel.text, Is.EqualTo("Bomba + Fuego + Doble"));
+        controller.NextBase();
+        Assert.That(selectionLabel.text, Is.EqualTo("Vial + Fuego + Doble"));
+        controller.NextEffect();
+        Assert.That(selectionLabel.text, Is.EqualTo("Vial + Escarcha + Doble"));
+        controller.NextEffect();
+        Assert.That(selectionLabel.text, Is.EqualTo("Vial + Savia + Doble"));
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void MissingOrDestroyedSelectionText_AllowsEditingCraftingAndRejection(bool destroyed)
+    {
+        if (destroyed) Object.DestroyImmediate(CreateSelectionText());
+        buttonObject.SetActive(true);
+        var before = Capture();
+        Assert.DoesNotThrow(() => SelectCompatibleFormula(PotionEffect.Escarcha));
+        Assert.DoesNotThrow(() => controller.CraftSelectedFormula());
+        AssertSelectedCrafted(before, PotionEffect.Escarcha);
+        controller.NextEffect();
+        var after = Capture();
+        Assert.DoesNotThrow(() => controller.CraftSelectedFormula());
+        AssertUnchanged(after);
+        LogAssert.NoUnexpectedReceived();
+    }
+
+    [UnityTest]
+    public IEnumerator Reenable_WithEditedSelectionPreservesSelectionAndResources()
+    {
+        Text selectionLabel = CreateSelectionText();
+        SelectCompatibleFormula(PotionEffect.Savia);
+        var before = Capture();
+        buttonObject.SetActive(true);
+        yield return null;
+        controller.enabled = false;
+        yield return null;
+        controller.enabled = true;
+        yield return null;
+        buttonObject.SetActive(false);
+        buttonObject.SetActive(true);
+        yield return null;
+        AssertUnchanged(before);
+        AssertCompatibleSelection(PotionEffect.Savia);
+        Assert.That(selectionLabel.text, Is.EqualTo("Vial + Savia + Ninguno"));
+        Assert.That(label.text, Is.Empty);
+    }
+
+    private Text CreateSelectionText()
+    {
+        var textObject = new GameObject("CraftingSelection", typeof(RectTransform), typeof(Text));
+        textObject.transform.SetParent(buttonObject.transform, false);
+        Text text = textObject.GetComponent<Text>();
+        Set("selectionText", text);
+        return text;
+    }
+
+    private void SelectCompatibleFormula(PotionEffect effect)
+    {
+        controller.NextBase();
+        controller.NextEffect();
+        if (effect == PotionEffect.Savia) controller.NextEffect();
+        else controller.ToggleModifier();
+    }
+
+    private void AssertEditableSelection(PotionBase potionBase, PotionEffect effect, PotionModifier modifier)
+    {
+        var selection = (PotionFormulaSelection)typeof(PotionCraftingController)
+            .GetField("selection", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(controller);
+        Assert.That(selection.SelectedBase, Is.EqualTo(potionBase));
+        Assert.That(selection.SelectedEffect, Is.EqualTo(effect));
+        Assert.That(selection.SelectedModifier, Is.EqualTo(modifier));
+    }
+
+    private void AssertCompatibleSelection(PotionEffect effect) =>
+        AssertEditableSelection(PotionBase.Vial, effect,
+            effect == PotionEffect.Escarcha ? PotionModifier.Doble : PotionModifier.Ninguno);
+
+    private void AssertSelectedCrafted(Snapshot before, PotionEffect effect)
+    {
+        int index = (int)effect;
+        Assert.That(inventory.GetQuantity(effect), Is.EqualTo(before.Ingredients[index] - 1));
+        Assert.That(equipment.GetCharges(effect), Is.EqualTo(before.Charges[index] + 1));
+        Assert.That(equipment.GetActiveFormula(effect), Is.EqualTo(new PotionFormula(PotionBase.Vial,
+            effect, effect == PotionEffect.Escarcha ? PotionModifier.Doble : PotionModifier.Ninguno)));
+        foreach (var other in Elements)
+            if (other != effect) AssertElementUnchanged(before, other);
+        // La reserva seleccionada puede recibir una instancia nueva de la misma formula.
+        Assert.That(equipment.SelectedElement, Is.EqualTo(before.SelectedElement));
+        Assert.That(equipment.SelectedFormula, Is.EqualTo(before.SelectedFormula));
+        AssertCompatibleSelection(effect);
+    }
+
     private void Set(string field, object value) =>
         typeof(PotionCraftingController).GetField(field,
             BindingFlags.Instance | BindingFlags.NonPublic).SetValue(controller, value);
