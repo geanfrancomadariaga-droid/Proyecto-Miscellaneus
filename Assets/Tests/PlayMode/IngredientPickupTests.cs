@@ -97,6 +97,25 @@ public class IngredientPickupTests
     }
 
     [UnityTest]
+    public IEnumerator RenewablePickupRequiresLeavingWithAllCollidersBeforeCollectingAgain()
+    {
+        typeof(IngredientPickup).GetField("renewable", BindingFlags.Instance | BindingFlags.NonPublic)
+            .SetValue(pickup, true);
+        Configure(PotionEffect.Savia, 1);
+        AddChildCollider();
+        Enter();
+        Step();
+        AssertQuantities(0, 0, 1);
+        yield return null;
+        Assert.That(pickupObject != null, Is.True);
+        MovePlayer(Vector2.left * 4f);
+        AssertQuantities(0, 0, 1);
+        MovePlayer(Vector2.zero);
+        Step();
+        AssertQuantities(0, 0, 2);
+    }
+
+    [UnityTest]
     public IEnumerator ContactWithoutInventory_PreservesPickupAndUnrelatedInventory()
     {
         Populate();

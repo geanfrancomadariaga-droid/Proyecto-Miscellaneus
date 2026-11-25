@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -17,19 +18,37 @@ public sealed class IngredientPickup : MonoBehaviour
     [SerializeField, Min(1)] private int amount = 1;
 
     private bool collected;
+    [Tooltip("En preparación, volver a entrar permite recolectar otra unidad.")]
+    [SerializeField] private bool renewable;
+    private readonly HashSet<Collider2D> contacts = new HashSet<Collider2D>();
+    public PotionEffect Ingredient => ingredient;
 
     private void OnTriggerEnter2D(Collider2D other)
     {
         // Unity puede enviar eventos de trigger a MonoBehaviours deshabilitados.
-        if (!isActiveAndEnabled || collected || other == null)
+        if (!isActiveAndEnabled || other == null)
             return;
 
         PlayerIngredientInventory inventory = other.GetComponentInParent<PlayerIngredientInventory>();
-        if (inventory == null || !inventory.TryAdd(ingredient, amount))
+        if (inventory == null) return;
+        if (renewable) contacts.Add(other);
+        if (collected || !inventory.TryAdd(ingredient, amount))
             return;
 
         // Destroy es diferido: bloquear otros contactos desde este mismo momento.
         collected = true;
-        Destroy(gameObject);
+        if (!renewable) Destroy(gameObject);
+    }
+
+    private void OnTriggerExit2D(Collider2D other)
+    {
+        if (renewable && contacts.Remove(other) && contacts.Count == 0)
+            collected = false;
+    }
+
+    private void OnDisable()
+    {
+        contacts.Clear();
+        if (renewable) collected = false;
     }
 }

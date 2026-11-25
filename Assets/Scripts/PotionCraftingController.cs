@@ -11,6 +11,11 @@ public sealed class PotionCraftingController : MonoBehaviour
     [SerializeField] private Text resultText;
     [Tooltip("Opcional: muestra los tres bloques seleccionados.")]
     [SerializeField] private Text selectionText;
+    [Tooltip("Opcional en escenas sin secuencia de duelos.")]
+    [SerializeField] private DuelSequenceController sequence;
+    public event System.Action<PotionFormula> Crafted;
+
+    internal bool IsLinkedTo(DuelSequenceController owner) => sequence == owner;
 
     private readonly PotionCraftingService service = new PotionCraftingService();
     private readonly PotionFormulaSelection selection = new PotionFormulaSelection();
@@ -45,6 +50,7 @@ public sealed class PotionCraftingController : MonoBehaviour
 
     public void ToggleModifier()
     {
+        if (sequence != null && !sequence.DoubleUnlocked) return;
         selection.TrySetModifier(selection.SelectedModifier == PotionModifier.Ninguno
             ? PotionModifier.Doble : PotionModifier.Ninguno);
         UpdateSelectionText();
@@ -62,14 +68,43 @@ public sealed class PotionCraftingController : MonoBehaviour
 
     private void UpdateSelectionText()
     {
-        if (selectionText != null)
-            selectionText.text = $"{selection.SelectedBase} + {selection.SelectedEffect} + {selection.SelectedModifier}";
+        if (selectionText == null) return;
+        string blocks = $"{selection.SelectedBase} + {selection.SelectedEffect} + {selection.SelectedModifier}";
+        if (sequence != null && selection.SelectedModifier == PotionModifier.Doble &&
+            selection.TryGetFormula(out var formula))
+            blocks += $" · Duración ×{PotionEffectDuration.For(formula, 1f):0}";
+        selectionText.text = blocks;
     }
 
     private void CraftFormula(PotionFormula formula)
     {
-        service.TryCraft(formula, inventory, equipment, out PotionCraftingResult result);
+        if (sequence != null && !sequence.AllowsCraft(formula))
+        {
+            if (resultText != null)
+                resultText.text = sequence.Phase == DuelPhase.Preparation
+                    ? "La bruja todavía no ha desbloqueado esta fórmula."
+                    : "Elabora durante la preparación.";
+            return;
+        }
+        bool crafted = service.TryCraft(formula, inventory, equipment, out PotionCraftingResult result);
         ShowResult(result, formula);
+        if (crafted) Crafted?.Invoke(formula);
+    }
+
+    // Una reserva solo admite una fórmula. La retirada exige una acción explícita
+    // y nunca cuenta como elaboración ni consume ingredientes.
+    public void RemoveOneConflictingCharge()
+    {
+        if (sequence == null || equipment == null || !selection.TryGetFormula(out var desired) ||
+            !sequence.AllowsCraft(desired)) return;
+        var current = equipment.GetActiveFormula(desired.Effect);
+        if (current == null || current == desired)
+        {
+            if (resultText != null) resultText.text = "La reserva es compatible.";
+            return;
+        }
+        if (equipment.TryConsume(current) && resultText != null)
+            resultText.text = $"Retirada 1 carga de {current.Effect}. Quedan {equipment.GetCharges(current.Effect)}.";
     }
 
     private void ShowResult(PotionCraftingResult result, PotionFormula formula)
