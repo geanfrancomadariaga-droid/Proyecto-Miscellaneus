@@ -13,11 +13,14 @@ public sealed class PlayerMeleeAttack : MonoBehaviour
     [SerializeField] private Health testTarget;
     [SerializeField] private Text targetHealthLabel;
     [SerializeField] private LineRenderer hitOutline;
+    [SerializeField, Min(0)] private int baseDamage = 5;
     [SerializeField, Min(0.01f)] private float reachOffset = 0.9f;
     [SerializeField, Min(0.01f)] private float hitRadius = 0.45f;
     [SerializeField, Min(0.01f)] private float feedbackSeconds = 0.18f;
 
     private PlayerController player;
+    private Health ownHealth;
+    private PotionCombatEffects effects;
     private float hideFeedbackAt;
     private int consecutiveAttacks;
     private float lastAttackAt;
@@ -27,6 +30,8 @@ public sealed class PlayerMeleeAttack : MonoBehaviour
     private void Awake()
     {
         player = GetComponent<PlayerController>();
+        ownHealth = GetComponent<Health>();
+        effects = GetComponent<PotionCombatEffects>();
     }
 
     private void OnEnable()
@@ -53,7 +58,7 @@ public sealed class PlayerMeleeAttack : MonoBehaviour
     // El tiempo se recibe para probar los limites sin esperas reales.
     private void AttackAt(float now)
     {
-        if (!isActiveAndEnabled || now < nextAttackAt)
+        if (!isActiveAndEnabled || now < nextAttackAt || (ownHealth != null && ownHealth.IsDead))
             return;
 
         // El bloqueo del sexto debe terminar antes de evaluar cualquier reinicio.
@@ -77,7 +82,8 @@ public sealed class PlayerMeleeAttack : MonoBehaviour
                 health.transform.IsChildOf(transform) || !damaged.Add(health))
                 continue;
             int healthBefore = health.CurrentHealth;
-            health.TakeDamage(5);
+            if (ownHealth != null && ownHealth.IsDead) break;
+            health.TakeDamage(effects != null ? effects.MeleeDamage(baseDamage) : baseDamage);
             if (health != null && health.CurrentHealth < healthBefore)
                 HitConfirmed?.Invoke(health);
         }

@@ -12,7 +12,7 @@ public sealed class PotionSelectionButton : MonoBehaviour
 
     // Cache solo de presentacion; la seleccion y las cantidades pertenecen a charges.
     private Text displayedLabel;
-    private PotionEffect? displayedElement;
+    private PotionFormula displayedFormula;
     private int displayedCharges;
     private bool hasPresentation;
 
@@ -39,10 +39,10 @@ public sealed class PotionSelectionButton : MonoBehaviour
     {
         PotionEffect? element = charges != null ? charges.SelectedElement : null;
         int amount = element.HasValue ? charges.GetCharges(element.Value) : 0;
-        bool available = element.HasValue && amount > 0 && charges.SelectedFormula != null;
+        var formula = charges != null ? charges.SelectedFormula : null;
+        bool available = amount > 0 && formula != null;
         if (!available)
         {
-            element = null;
             amount = 0;
         }
 
@@ -50,16 +50,16 @@ public sealed class PotionSelectionButton : MonoBehaviour
             selectionButton.interactable = available;
 
         if (hasPresentation && displayedLabel == selectionLabel &&
-            displayedElement == element && displayedCharges == amount)
+            displayedFormula == formula && displayedCharges == amount)
             return;
 
         if (selectionLabel != null)
             selectionLabel.text = available
-                ? $"{element.Value.ToString().ToUpperInvariant()}: {amount}"
+                ? $"{formula.Base} · {formula.Effect}{(formula.Modifier == PotionModifier.Doble ? " Doble" : "")}: {amount}"
                 : "SIN POCIONES";
 
         displayedLabel = selectionLabel;
-        displayedElement = element;
+        displayedFormula = formula;
         displayedCharges = amount;
         hasPresentation = true;
     }

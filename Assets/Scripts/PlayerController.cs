@@ -9,6 +9,7 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private InputActionReference moveActionReference;
 
     private Rigidbody2D playerBody;
+    private PotionCombatEffects effects;
     private InputAction moveAction;
     private Vector2 movementInput;
 
@@ -18,6 +19,7 @@ public class PlayerController : MonoBehaviour
     private void Awake()
     {
         playerBody = GetComponent<Rigidbody2D>();
+        effects = GetComponent<PotionCombatEffects>();
         playerBody.gravityScale = 0f;
     }
 
@@ -46,7 +48,7 @@ public class PlayerController : MonoBehaviour
     private void FixedUpdate()
     {
         // linearVelocity se expresa en unidades por segundo.
-        playerBody.linearVelocity = movementInput * moveSpeed;
+        playerBody.linearVelocity = movementInput * (moveSpeed * (effects != null ? effects.SpeedFactor : 1f));
     }
 
     private void OnDisable()

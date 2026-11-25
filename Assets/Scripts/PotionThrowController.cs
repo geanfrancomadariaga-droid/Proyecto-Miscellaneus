@@ -39,7 +39,7 @@ public sealed class PotionThrowController : MonoBehaviour
     private void OnAimStarted()
     {
         ClearCapture();
-        if (isActiveAndEnabled && CombatIsActive() && aimInput != null && charges != null)
+        if (isActiveAndEnabled && Time.timeScale > 0f && CombatIsActive() && aimInput != null && charges != null)
             capturedFormula = charges.SelectedFormula;
     }
 
@@ -51,6 +51,7 @@ public sealed class PotionThrowController : MonoBehaviour
     private bool CombatIsActive()
     {
         return playerHealth != null && enemyHealth != null &&
+            playerHealth.gameObject.activeInHierarchy && enemyHealth.gameObject.activeInHierarchy &&
             !playerHealth.IsDead && !enemyHealth.IsDead;
     }
 
@@ -59,14 +60,21 @@ public sealed class PotionThrowController : MonoBehaviour
         // Cerrar la captura incluso si la liberacion se rechaza; nunca releer la seleccion.
         PotionFormula formula = capturedFormula;
         ClearCapture();
-        if (!isActiveAndEnabled || !result.IsValid || !CombatIsActive() ||
+        if (!isActiveAndEnabled || Time.timeScale <= 0f || !result.IsValid || !CombatIsActive() ||
             aimInput == null || charges == null || formula == null ||
-            formula.Base != PotionBase.Bomba || formula.Effect != PotionEffect.Fuego ||
-            formula.Modifier != PotionModifier.Ninguno ||
+            formula.Base != PotionBase.Bomba ||
             projectilePrefab == null ||
             !projectilePrefab.TryGetComponent<FireExplosion>(out _) ||
             float.IsNaN(flightDuration) || float.IsInfinity(flightDuration))
             return;
+
+        if (formula.Effect != PotionEffect.Fuego &&
+            (!playerHealth.TryGetComponent<PotionCombatEffects>(out _) ||
+             !enemyHealth.TryGetComponent<PotionCombatEffects>(out _)))
+        {
+            Debug.LogWarning("PotionThrowController: falta PotionCombatEffects en el jugador o el rival. Integra los efectos de pociones.", this);
+            return;
+        }
 
         Vector3 origin = playerHealth.transform.position;
         Vector3 destination = origin + (Vector3)(result.Direction * result.Distance);
@@ -82,7 +90,7 @@ public sealed class PotionThrowController : MonoBehaviour
             return;
         }
 
-        explosion.SetTarget(enemyHealth);
+        explosion.Configure(formula, playerHealth, enemyHealth);
 
         Action arrived = () => OnArrived(projectile, explosion);
         flights.Add(projectile, arrived);

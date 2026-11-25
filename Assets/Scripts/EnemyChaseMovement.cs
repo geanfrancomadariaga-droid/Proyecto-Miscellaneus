@@ -13,6 +13,7 @@ public sealed class EnemyChaseMovement : MonoBehaviour
     [SerializeField, Min(0f)] private float stoppingDistance = 1.05f;
 
     private Rigidbody2D body;
+    private PotionCombatEffects effects;
     private Health health;
     private EnemyCombatState combatState;
     private EnemyMeleeTelegraph telegraph;
@@ -22,6 +23,7 @@ public sealed class EnemyChaseMovement : MonoBehaviour
     private void Awake()
     {
         body = GetComponent<Rigidbody2D>();
+        effects = GetComponent<PotionCombatEffects>();
         health = GetComponent<Health>();
         combatState = GetComponent<EnemyCombatState>();
         telegraph = GetComponent<EnemyMeleeTelegraph>();
@@ -50,7 +52,7 @@ public sealed class EnemyChaseMovement : MonoBehaviour
         float distance = Mathf.Max(0f, stoppingDistance);
         body.linearVelocity = offset.sqrMagnitude <= distance * distance
             ? Vector2.zero
-            : offset.normalized * Mathf.Max(0f, chaseSpeed);
+            : offset.normalized * (Mathf.Max(0f, chaseSpeed) * (effects != null ? effects.SpeedFactor : 1f));
     }
 
     private void StopMovement()
