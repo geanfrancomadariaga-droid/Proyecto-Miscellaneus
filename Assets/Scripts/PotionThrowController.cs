@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>Conecta el apuntado con las cargas y el ciclo de vida de las bombas.</summary>
+[DisallowMultipleComponent]
 public sealed class PotionThrowController : MonoBehaviour
 {
+    [SerializeField] private DuelSequenceController sequence;
     [SerializeField] private PotionAimInput aimInput;
     [SerializeField] private EquippedPotionCharges charges;
     [SerializeField] private Health playerHealth;
@@ -39,7 +41,8 @@ public sealed class PotionThrowController : MonoBehaviour
     private void OnAimStarted()
     {
         ClearCapture();
-        if (isActiveAndEnabled && Time.timeScale > 0f && CombatIsActive() && aimInput != null && charges != null)
+        if (isActiveAndEnabled && CombatIsActive() && aimInput != null &&
+            charges != null && charges.SelectedFormula?.Base == PotionBase.Bomba)
             capturedFormula = charges.SelectedFormula;
     }
 
@@ -50,9 +53,11 @@ public sealed class PotionThrowController : MonoBehaviour
 
     private bool CombatIsActive()
     {
-        return playerHealth != null && enemyHealth != null &&
-            playerHealth.gameObject.activeInHierarchy && enemyHealth.gameObject.activeInHierarchy &&
-            !playerHealth.IsDead && !enemyHealth.IsDead;
+        return Time.timeScale > 0f && playerHealth != null && enemyHealth != null &&
+            playerHealth.isActiveAndEnabled && enemyHealth.isActiveAndEnabled &&
+            !playerHealth.IsDead && !enemyHealth.IsDead && (sequence == null ||
+            (sequence.isActiveAndEnabled && sequence.Phase == DuelPhase.Combat &&
+             sequence.OpponentHealth == enemyHealth));
     }
 
     private void OnAimFinished(PotionAimCalculator.Result result)
@@ -60,7 +65,7 @@ public sealed class PotionThrowController : MonoBehaviour
         // Cerrar la captura incluso si la liberacion se rechaza; nunca releer la seleccion.
         PotionFormula formula = capturedFormula;
         ClearCapture();
-        if (!isActiveAndEnabled || Time.timeScale <= 0f || !result.IsValid || !CombatIsActive() ||
+        if (!isActiveAndEnabled || !result.IsValid || !CombatIsActive() ||
             aimInput == null || charges == null || formula == null ||
             formula.Base != PotionBase.Bomba ||
             projectilePrefab == null ||
@@ -69,8 +74,8 @@ public sealed class PotionThrowController : MonoBehaviour
             return;
 
         if (formula.Effect != PotionEffect.Fuego &&
-            (!playerHealth.TryGetComponent<PotionCombatEffects>(out _) ||
-             !enemyHealth.TryGetComponent<PotionCombatEffects>(out _)))
+            (!playerHealth.TryGetComponent<PotionCombatEffects>(out var playerEffects) || !playerEffects.CanReceive ||
+             !enemyHealth.TryGetComponent<PotionCombatEffects>(out var enemyEffects) || !enemyEffects.CanReceive))
         {
             Debug.LogWarning("PotionThrowController: falta PotionCombatEffects en el jugador o el rival. Integra los efectos de pociones.", this);
             return;

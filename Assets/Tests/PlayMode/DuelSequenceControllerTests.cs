@@ -32,18 +32,18 @@ public class DuelSequenceConfigurationTests
 
 // Se prueba la escena guardada por la herramienta, incluidos sus botones persistentes.
 // Cargarla de forma aditiva conserva la escena temporal que aloja al Test Runner.
-public class DuelSequenceControllerTests
+public abstract class SampleDuelTestFixture
 {
-    private const string ScenePath = "Assets/Scenes/SampleScene.unity";
-    private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
-    private Scene original, sample;
+    protected virtual string ScenePath => "Assets/Scenes/SampleScene.unity";
+    protected const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+    protected Scene original, sample;
     private float originalScale;
-    private DuelSequenceController sequence;
-    private PotionCraftingController crafting;
-    private PlayerIngredientInventory stock;
-    private EquippedPotionCharges charges;
-    private Health player;
-    private EnemyVictoryController[] rivals;
+    protected DuelSequenceController sequence;
+    protected PotionCraftingController crafting;
+    protected PlayerIngredientInventory stock;
+    protected EquippedPotionCharges charges;
+    protected Health player;
+    protected EnemyVictoryController[] rivals;
 
     [UnitySetUp]
     public IEnumerator SetUp()
@@ -54,11 +54,15 @@ public class DuelSequenceControllerTests
         yield return LoadCopy(SceneUtility.GetBuildIndexByScenePath(ScenePath));
     }
 
-    private IEnumerator LoadCopy(int index)
+    protected virtual AsyncOperation LoadAdditive(int index)
     {
-        Assert.That(index, Is.GreaterThanOrEqualTo(0), "Habilita SampleScene en la Scene List.");
+        return SceneManager.LoadSceneAsync(index, LoadSceneMode.Additive);
+    }
+
+    protected IEnumerator LoadCopy(int index)
+    {
         int next = SceneManager.sceneCount;
-        yield return SceneManager.LoadSceneAsync(index, LoadSceneMode.Additive);
+        yield return LoadAdditive(index);
         sample = SceneManager.GetSceneAt(next);
         Assert.That(sample.path, Is.EqualTo(ScenePath));
         SceneManager.SetActiveScene(sample);
@@ -80,38 +84,38 @@ public class DuelSequenceControllerTests
         Time.timeScale = originalScale;
     }
 
-    private T[] All<T>() where T : Component => sample.GetRootGameObjects()
+    protected T[] All<T>() where T : Component => sample.GetRootGameObjects()
         .SelectMany(root => root.GetComponentsInChildren<T>(true)).ToArray();
 
-    private T Named<T>(string name) where T : Component => All<T>().Single(c => c.name == name);
+    protected T Named<T>(string name) where T : Component => All<T>().Single(c => c.name == name);
 
-    private void Click(string name)
+    protected void Click(string name)
     {
         var button = Named<Button>(name);
         Assert.That(button.isActiveAndEnabled && button.IsInteractable(), Is.True, name);
         button.onClick.Invoke();
     }
 
-    private void AssertOpponents(int activeDuel)
+    protected void AssertOpponents(int activeDuel)
     {
         Assert.That(rivals.Length, Is.EqualTo(3));
         for (int i = 0; i < rivals.Length; i++)
             Assert.That(rivals[i].gameObject.activeInHierarchy, Is.EqualTo(i + 1 == activeDuel));
     }
 
-    private void Supply()
+    protected void Supply()
     {
         foreach (PotionEffect effect in Enum.GetValues(typeof(PotionEffect)))
             Assert.That(stock.TryAdd(effect, 4), Is.True);
     }
 
-    private void DefeatOpponent()
+    protected void DefeatOpponent()
     {
         var health = sequence.OpponentHealth;
         health.TakeDamage(health.CurrentHealth);
     }
 
-    private void ReachCombat(int duel)
+    protected void ReachCombat(int duel)
     {
         Supply();
         sequence.BeginGame();
@@ -134,7 +138,10 @@ public class DuelSequenceControllerTests
         sequence.BeginDuel();
         Assert.That(sequence.CurrentDuel, Is.EqualTo(duel));
     }
+}
 
+public class DuelSequenceControllerTests : SampleDuelTestFixture
+{
     [Test]
     public void MenuToCompletion_UsesRealButtonsAndDoesNotSkipOrResetResources()
     {

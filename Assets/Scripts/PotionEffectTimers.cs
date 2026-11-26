@@ -11,6 +11,7 @@ public sealed class PotionEffectTimers
 
     public void Apply(PotionFormula formula, double now)
     {
+        if (formula == null) return;
         if (formula.Base == PotionBase.Vial && formula.Effect == PotionEffect.Fuego)
             fireUntil = now + PotionEffectDuration.For(formula, 5f);
         else if (formula.Effect == PotionEffect.Escarcha)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Events;
@@ -13,6 +14,110 @@ public static class DuelSceneSetupEditor
 {
     private const string ScenePath = "Assets/Scenes/SampleScene.unity";
     private const string Operation = "Integrar tres duelos";
+
+    [MenuItem("Tools/Miscellaneus/Integrar efectos mágicos")]
+    public static void IntegrateMagic()
+    {
+        var scene = SceneManager.GetActiveScene();
+        if (EditorApplication.isPlayingOrWillChangePlaymode || scene.path != ScenePath ||
+            PrefabStageUtility.GetCurrentPrefabStage() != null)
+        {
+            Debug.LogError("Abre SampleScene como escena activa, fuera de Play y del modo Prefab.");
+            return;
+        }
+
+        Undo.IncrementCurrentGroup();
+        int group = Undo.GetCurrentGroup();
+        try
+        {
+            var player = Root(scene, "Player");
+            var canvas = Root(scene, "Canvas");
+            var sequence = Require<DuelSequenceController>(canvas);
+            var combat = ReadRef<GameObject>(Require<DuelFlowUI>(canvas), "combatControls");
+            var aim = Require<PotionAimInput>(Child(combat, "PotionAimControl"));
+            var selector = Require<PotionSelectionButton>(Child(combat, "PotionSelectionButtonUI"));
+            var charges = Require<EquippedPotionCharges>(player);
+            var health = Require<Health>(player);
+            CheckRef(selector, "charges", charges);
+            CheckClick(Require<Button>(selector.gameObject), selector, nameof(selector.SelectNext));
+            ConnectMagicLaunchers(scene, player, health, charges, sequence, aim);
+            ConfigureVialControls(combat, selector, charges, sequence, aim);
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            Undo.SetCurrentGroupName("Integrar efectos mágicos");
+            Undo.CollapseUndoOperations(group);
+            Debug.Log("Efectos vinculados al jugador y a tres rivales. Revisa SampleScene antes de guardarla.", canvas);
+        }
+        catch (Exception e)
+        {
+            Undo.FlushUndoRecordObjects();
+            Undo.RevertAllDownToGroup(group);
+            Debug.LogError($"Integrar efectos mágicos: {e.Message}");
+        }
+    }
+
+    private static void ConnectMagicLaunchers(Scene scene, GameObject player, Health health,
+        EquippedPotionCharges charges, DuelSequenceController sequence, PotionAimInput aim)
+    {
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/FireBomb.prefab");
+        if (prefab == null) throw new InvalidOperationException("Falta Assets/Prefabs/FireBomb.prefab.");
+        var projectile = Require<BombProjectile>(prefab);
+        Require<FireExplosion>(prefab);
+
+        var rivals = new SerializedObject(sequence).FindProperty("rivals");
+        if (rivals.arraySize != 3)
+            throw new InvalidOperationException("Revisa los tres rivales de DuelSequenceController.");
+        var launchers = scene.GetRootGameObjects()
+            .SelectMany(root => root.GetComponentsInChildren<PotionThrowController>(true)).ToArray();
+        if (launchers.Length != 3)
+            throw new InvalidOperationException($"Se esperaban tres lanzadores, encontrados {launchers.Length}.");
+
+        Link(Ensure<PotionCombatEffects>(player), "sequence", sequence);
+        var assigned = new HashSet<EnemyVictoryController>();
+        for (int i = 0; i < rivals.arraySize; i++)
+        {
+            var rival = rivals.GetArrayElementAtIndex(i).objectReferenceValue as EnemyVictoryController;
+            if (rival == null || rival.gameObject.scene != scene || !assigned.Add(rival))
+                throw new InvalidOperationException($"Revisa el rival {i + 1} de la secuencia.");
+            var host = i == 0 ? player : rival.gameObject;
+            var launcher = Require<PotionThrowController>(host);
+            if (i == 0) CheckRef(sequence, "firstLauncher", launcher);
+            Require<EnemyChaseMovement>(rival.gameObject);
+            Link(Ensure<PotionCombatEffects>(rival.gameObject), "sequence", sequence);
+            Link(launcher, "sequence", sequence);
+            Link(launcher, "charges", charges);
+            Link(launcher, "aimInput", aim);
+            Link(launcher, "playerHealth", health);
+            Link(launcher, "enemyHealth", Require<Health>(rival.gameObject));
+            Link(launcher, "projectilePrefab", projectile);
+        }
+    }
+
+    private static void ConfigureVialControls(GameObject combat, PotionSelectionButton selector,
+        EquippedPotionCharges charges, DuelSequenceController sequence, PotionAimInput aim)
+    {
+        var vial = NewButton(combat, "Usar vial", "USAR VIAL", 0, 0, 1, 1);
+        if (vial.onClick.GetPersistentEventCount() != 0)
+            throw new InvalidOperationException("USAR VIAL recibe el clic en tiempo de juego. Revisa su lista On Click.");
+        var aimRect = Require<RectTransform>(aim.gameObject);
+        var vialRect = Require<RectTransform>(vial.gameObject);
+        Undo.RecordObject(vialRect, "Colocar botón de vial");
+        vialRect.anchorMin = aimRect.anchorMin;
+        vialRect.anchorMax = aimRect.anchorMax;
+        vialRect.pivot = aimRect.pivot;
+        vialRect.sizeDelta = aimRect.sizeDelta;
+        vialRect.anchoredPosition = aimRect.anchoredPosition;
+        var selectorRect = Require<RectTransform>(selector.gameObject);
+        Undo.RecordObject(selectorRect, "Mostrar la fórmula equipada");
+        selectorRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 172f);
+        var status = NewLabel(combat, "Estado de efectos", 20, .02f, .71f, .72f, .85f);
+        var controls = Ensure<PotionCombatControls>(combat);
+        Link(controls, "sequence", sequence);
+        Link(controls, "charges", charges);
+        Link(controls, "aimInput", aim);
+        Link(controls, "useVial", vial);
+        Link(controls, "status", status);
+    }
 
     [MenuItem("Tools/Miscellaneus/Integrar tres duelos")]
     public static void Integrate()

@@ -7,6 +7,7 @@ public sealed class PotionCombatControls : MonoBehaviour
 {
     [SerializeField] private DuelSequenceController sequence;
     [SerializeField] private EquippedPotionCharges charges;
+    [SerializeField] private PotionAimInput aimInput;
     [SerializeField] private Button useVial;
     [SerializeField] private Text status;
 
@@ -17,10 +18,10 @@ public sealed class PotionCombatControls : MonoBehaviour
 
     private void OnEnable()
     {
-        if (sequence == null || charges == null || useVial == null || status == null ||
+        if (sequence == null || charges == null || aimInput == null || useVial == null || status == null ||
             !charges.TryGetComponent(out player) || !charges.TryGetComponent(out playerHealth))
         {
-            Debug.LogError("PotionCombatControls: asigna secuencia, cargas de Player con Health y PotionCombatEffects, botón USAR VIAL y texto de estado.", this);
+            Debug.LogError("PotionCombatControls: revisa secuencia, cargas del jugador, efectos, apuntado, botón USAR VIAL y texto de estado.", this);
             enabled = false;
             return;
         }
@@ -31,9 +32,18 @@ public sealed class PotionCombatControls : MonoBehaviour
         Refresh();
     }
 
-    private bool CanDrink() => isActiveAndEnabled && sequence.isActiveAndEnabled &&
-        sequence.Phase == DuelPhase.Combat && Time.timeScale > 0f && player.CanReceive &&
-        charges.SelectedFormula?.Base == PotionBase.Vial;
+private bool CanDrink() =>
+    isActiveAndEnabled &&
+    sequence != null &&
+    sequence.isActiveAndEnabled &&
+    sequence.Phase == DuelPhase.Combat &&
+    Time.timeScale > 0f &&
+    player != null && player.CanReceive &&
+    opponent != null && opponent.CanReceive &&
+    aimInput != null && !aimInput.IsAiming &&
+    charges != null &&
+    charges.SelectedFormula?.Base == PotionBase.Vial;
+
 
     private void UseVial()
     {
@@ -50,6 +60,12 @@ public sealed class PotionCombatControls : MonoBehaviour
 
     private void Refresh()
     {
+        // Ambos controles ocupan el mismo lugar. Un gesto iniciado conserva su destino
+        // aunque otro dedo cambie la selección antes de soltarlo.
+        bool aiming = aimInput.IsAiming || charges.SelectedFormula?.Base == PotionBase.Bomba;
+        if (aimInput.gameObject.activeSelf != aiming) aimInput.gameObject.SetActive(aiming);
+        bool drinking = !aiming && charges.SelectedFormula?.Base == PotionBase.Vial;
+        if (useVial.gameObject.activeSelf != drinking) useVial.gameObject.SetActive(drinking);
         useVial.interactable = CanDrink();
         var state = (hp: playerHealth.CurrentHealth, fire: player.HasFire, shield: player.IsProtected,
             slow: player.SpeedFactor < 1f, rivalSlow: opponent != null && opponent.SpeedFactor < 1f,

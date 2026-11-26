@@ -57,7 +57,7 @@ public class PotionSelectionButtonTests
     [Test]
     public void InitialFire_DisplaysFiveCharges()
     {
-        AssertDisplay(PotionEffect.Fuego, "FUEGO: 5");
+        AssertDisplay(PotionEffect.Fuego, "Bomba · Fuego: 5");
     }
 
     [Test]
@@ -68,23 +68,23 @@ public class PotionSelectionButtonTests
         for (int cycle = 0; cycle < 2; cycle++)
         {
             button.onClick.Invoke();
-            AssertDisplay(PotionEffect.Escarcha, "ESCARCHA: 3");
+            AssertDisplay(PotionEffect.Escarcha, "Bomba · Escarcha: 3");
             button.onClick.Invoke();
-            AssertDisplay(PotionEffect.Savia, "SAVIA: 2");
+            AssertDisplay(PotionEffect.Savia, "Bomba · Savia: 2");
             button.onClick.Invoke();
-            AssertDisplay(PotionEffect.Fuego, "FUEGO: 5");
+            AssertDisplay(PotionEffect.Fuego, "Bomba · Fuego: 5");
         }
     }
 
-    [TestCase(PotionEffect.Escarcha, "ESCARCHA: 2")]
-    [TestCase(PotionEffect.Savia, "SAVIA: 2")]
+    [TestCase(PotionEffect.Escarcha, "Bomba · Escarcha: 2")]
+    [TestCase(PotionEffect.Savia, "Bomba · Savia: 2")]
     public void Click_SkipsEmptyReserve(PotionEffect other, string text)
     {
         Add(other, 2);
         button.onClick.Invoke();
         AssertDisplay(other, text);
         button.onClick.Invoke();
-        AssertDisplay(PotionEffect.Fuego, "FUEGO: 5");
+        AssertDisplay(PotionEffect.Fuego, "Bomba · Fuego: 5");
     }
 
     [Test]
@@ -93,7 +93,7 @@ public class PotionSelectionButtonTests
         for (int i = 0; i < 4; i++)
         {
             button.onClick.Invoke();
-            AssertDisplay(PotionEffect.Fuego, "FUEGO: 5");
+            AssertDisplay(PotionEffect.Fuego, "Bomba · Fuego: 5");
             Assert.That(charges.GetCharges(PotionEffect.Fuego), Is.EqualTo(5));
         }
     }
@@ -105,7 +105,7 @@ public class PotionSelectionButtonTests
         Add(PotionEffect.Escarcha, 1);
         Assert.That(charges.TryConsumeCharge(), Is.True);
         yield return null;
-        AssertDisplay(PotionEffect.Escarcha, "ESCARCHA: 1");
+        AssertDisplay(PotionEffect.Escarcha, "Bomba · Escarcha: 1");
         Assert.That(charges.TryConsume(charges.SelectedFormula), Is.True);
         yield return null;
         Assert.That(label.text, Is.EqualTo("SIN POCIONES"));
@@ -117,7 +117,7 @@ public class PotionSelectionButtonTests
     {
         Assert.That(charges.TryConsumeCharge(), Is.True);
         yield return null;
-        AssertDisplay(PotionEffect.Fuego, "FUEGO: 4");
+        AssertDisplay(PotionEffect.Fuego, "Bomba · Fuego: 4");
     }
 
     [UnityTest]
@@ -129,7 +129,7 @@ public class PotionSelectionButtonTests
         Assert.That(button.interactable, Is.False);
         Add(PotionEffect.Savia, 2);
         yield return null;
-        AssertDisplay(PotionEffect.Savia, "SAVIA: 2");
+        AssertDisplay(PotionEffect.Savia, "Bomba · Savia: 2");
     }
 
     [Test]
@@ -177,7 +177,7 @@ public class PotionSelectionButtonTests
         Set("selectionButton", null);
         button.onClick.Invoke();
         yield return null;
-        Assert.That(label.text, Is.EqualTo("FUEGO: 5"));
+        Assert.That(label.text, Is.EqualTo("Bomba · Fuego: 5"));
         Set("selectionLabel", null);
         selector.enabled = false;
         selector.enabled = true;
@@ -216,9 +216,9 @@ public class PotionSelectionButtonTests
         selector.enabled = false;
         Assert.That(charges.TryConsumeCharge(), Is.True);
         selector.enabled = true;
-        AssertDisplay(PotionEffect.Fuego, "FUEGO: 4");
+        AssertDisplay(PotionEffect.Fuego, "Bomba · Fuego: 4");
         button.onClick.Invoke();
-        AssertDisplay(PotionEffect.Escarcha, "ESCARCHA: 2");
+        AssertDisplay(PotionEffect.Escarcha, "Bomba · Escarcha: 2");
         LogAssert.NoUnexpectedReceived();
     }
 }

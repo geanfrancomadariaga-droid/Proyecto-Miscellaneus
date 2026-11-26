@@ -10,7 +10,9 @@ public sealed class FireExplosion : MonoBehaviour
     [SerializeField, Min(0.01f)] private float radius = 0.75f;
 
     private bool resolved;
-    private PotionFormula formula;
+    // Los usos originales de SetTarget representan siempre Bomba + Fuego.
+    private static readonly PotionFormula FireBomb = new PotionFormula(PotionBase.Bomba, PotionEffect.Fuego);
+    private PotionFormula formula = FireBomb;
     private Health playerHealth;
     private readonly List<Collider2D> hits = new List<Collider2D>();
 
@@ -35,9 +37,9 @@ public sealed class FireExplosion : MonoBehaviour
 
         // Cerrar antes del dano tambien impide duplicados desde HealthChanged.
         resolved = true;
+        if (formula?.Base != PotionBase.Bomba) return;
         Physics2D.SyncTransforms();
-        // Los prefabs y llamadas del primer duelo conservan Fuego por defecto.
-        if (formula == null || formula.Effect == PotionEffect.Fuego)
+        if (formula.Effect == PotionEffect.Fuego)
         {
             if (Touches(enemyHealth)) enemyHealth.TakeDamage(10);
             return;
@@ -55,7 +57,7 @@ public sealed class FireExplosion : MonoBehaviour
 
     private bool Touches(Health target)
     {
-        if (target == null || target.IsDead || !target.gameObject.activeInHierarchy)
+        if (target == null || target.IsDead || !target.isActiveAndEnabled)
             return false;
 
         // Comprueba el objetivo directamente, sin depender de queriesHitTriggers.

@@ -32,10 +32,12 @@ public class PotionThrowControllerTests
 
         player = new GameObject("ThrowTestPlayer");
         playerHealth = player.AddComponent<Health>();
+        player.AddComponent<PotionCombatEffects>();
         charges = player.AddComponent<EquippedPotionCharges>();
         charges.Initialize(3);
         enemy = new GameObject("ThrowTestEnemy");
         enemyHealth = enemy.AddComponent<Health>();
+        enemy.AddComponent<PotionCombatEffects>();
         enemy.AddComponent<CircleCollider2D>().radius = 0.25f;
         enemy.transform.position = Vector3.right * 5f;
 
@@ -152,12 +154,29 @@ public class PotionThrowControllerTests
     [TestCase(PotionBase.Bomba, PotionEffect.Escarcha, PotionModifier.Ninguno)]
     [TestCase(PotionBase.Bomba, PotionEffect.Savia, PotionModifier.Ninguno)]
     [TestCase(PotionBase.Bomba, PotionEffect.Escarcha, PotionModifier.Doble)]
+    public void ElementalBomb_ConsumesOneAndAppliesOnlyOnArrival(PotionBase potionBase,
+        PotionEffect effect, PotionModifier modifier)
+    {
+        charges.Initialize(0);
+        var formula = new PotionFormula(potionBase, effect, modifier);
+        Assert.That(charges.TryAdd(formula, 2), Is.True);
+        enemyHealth.TakeDamage(30);
+        Throw();
+        Assert.That(charges.GetCharges(effect), Is.EqualTo(1));
+        Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(70));
+        var effects = enemy.GetComponent<PotionCombatEffects>();
+        Assert.That(effects.SpeedFactor, Is.EqualTo(1f));
+        Bombs().Single().Advance(1f);
+        Assert.That(effects.SpeedFactor, Is.EqualTo(effect == PotionEffect.Escarcha ? .75f : 1f));
+        Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(effect == PotionEffect.Savia ? 85 : 70));
+    }
+
     [TestCase(PotionBase.Vial, PotionEffect.Fuego, PotionModifier.Ninguno)]
     [TestCase(PotionBase.Vial, PotionEffect.Fuego, PotionModifier.Doble)]
     [TestCase(PotionBase.Vial, PotionEffect.Escarcha, PotionModifier.Ninguno)]
     [TestCase(PotionBase.Vial, PotionEffect.Escarcha, PotionModifier.Doble)]
     [TestCase(PotionBase.Vial, PotionEffect.Savia, PotionModifier.Ninguno)]
-    public void UnsupportedFormula_DoesNotThrowOrConsume(PotionBase potionBase,
+    public void VialGesture_DoesNotThrowOrConsume(PotionBase potionBase,
         PotionEffect effect, PotionModifier modifier)
     {
         charges.Initialize(0);
@@ -173,7 +192,82 @@ public class PotionThrowControllerTests
 
     [TestCase(PotionEffect.Escarcha)]
     [TestCase(PotionEffect.Savia)]
-    public void UnsupportedThenSelectFire_DoesNotSubstituteFire(PotionEffect effect)
+    public void MissingEffects_RejectsElementalBombWithoutSpending(PotionEffect effect)
+    {
+        Object.DestroyImmediate(enemy.GetComponent<PotionCombatEffects>());
+        charges.Initialize(0);
+        Assert.That(charges.TryAdd(new PotionFormula(PotionBase.Bomba, effect), 1), Is.True);
+        LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("falta PotionCombatEffects"));
+        Throw();
+        Assert.That(charges.GetCharges(effect), Is.EqualTo(1));
+        Assert.That(Bombs(), Is.Empty);
+    }
+
+    [TestCase(true, true)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(false, false)]
+    public void SapArea_HealsEachParticipantOnceOnlyWithinRadius(bool playerInside, bool enemyInside)
+    {
+        charges.Initialize(0);
+        Assert.That(charges.TryAdd(new PotionFormula(PotionBase.Bomba, PotionEffect.Savia), 1), Is.True);
+        player.AddComponent<CircleCollider2D>().radius = .2f;
+        player.AddComponent<BoxCollider2D>();
+        enemy.AddComponent<BoxCollider2D>();
+        playerHealth.TakeDamage(30);
+        enemyHealth.TakeDamage(30);
+        Throw();
+        if (playerInside) player.transform.position = Vector3.right * 5f;
+        if (!enemyInside) enemy.transform.position = Vector3.right * 8f;
+        var bomb = Bombs().Single();
+        bomb.Advance(.5f);
+        bomb.GetComponent<FireExplosion>().Resolve();
+        Assert.That(playerHealth.CurrentHealth, Is.EqualTo(playerInside ? 80 : 70));
+        Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(enemyInside ? 85 : 70));
+        Assert.That(charges.GetCharges(PotionEffect.Savia), Is.Zero);
+    }
+
+    [TestCase(PotionEffect.Escarcha)]
+    [TestCase(PotionEffect.Savia)]
+    public void InactiveOrDeadOpponentDuringFlight_ReceivesNoEffect(PotionEffect effect)
+    {
+        charges.Initialize(0);
+        Assert.That(charges.TryAdd(new PotionFormula(PotionBase.Bomba, effect), 1), Is.True);
+        enemyHealth.TakeDamage(20);
+        Throw();
+        if (effect == PotionEffect.Escarcha) enemy.SetActive(false);
+        else enemyHealth.TakeDamage(80);
+        Bombs().Single().Advance(1f);
+        Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(effect == PotionEffect.Escarcha ? 80 : 0));
+        Assert.That(enemy.GetComponent<PotionCombatEffects>().SpeedFactor, Is.EqualTo(1f));
+        Assert.That(charges.GetCharges(effect), Is.Zero);
+    }
+
+    [Test]
+    public void SapClampsBothParticipantsAndLeavesNearbyNonParticipantWounded()
+    {
+        charges.Initialize(0);
+        Assert.That(charges.TryAdd(new PotionFormula(PotionBase.Bomba, PotionEffect.Savia), 1), Is.True);
+        player.AddComponent<BoxCollider2D>();
+        enemyHealth.TakeDamage(3);
+        playerHealth.TakeDamage(4);
+        var other = new GameObject("Other health in the area");
+        other.transform.SetParent(enemy.transform, false);
+        var otherHealth = other.AddComponent<Health>();
+        other.AddComponent<PotionCombatEffects>();
+        other.AddComponent<BoxCollider2D>();
+        otherHealth.TakeDamage(30);
+        Throw();
+        player.transform.position = enemy.transform.position;
+        Bombs().Single().Advance(1f);
+        Assert.That(playerHealth.CurrentHealth, Is.EqualTo(playerHealth.MaxHealth));
+        Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(enemyHealth.MaxHealth));
+        Assert.That(otherHealth.CurrentHealth, Is.EqualTo(70));
+    }
+
+    [TestCase(PotionEffect.Escarcha)]
+    [TestCase(PotionEffect.Savia)]
+    public void ElementalBombThenSelectFire_UsesCapturedFormula(PotionEffect effect)
     {
         var formula = new PotionFormula(PotionBase.Bomba, effect);
         Assert.That(charges.TryAdd(formula, 2), Is.True);
@@ -183,8 +277,13 @@ public class PotionThrowControllerTests
         Assert.That(charges.TrySelectNext(), Is.True);
         Assert.That(charges.SelectedElement, Is.EqualTo(PotionEffect.Fuego));
         Release(data, Vector2.right * 100f);
-        AssertNoThrow();
-        Assert.That(charges.GetCharges(effect), Is.EqualTo(2));
+        Assert.That(charges.RemainingCharges, Is.EqualTo(3));
+        Assert.That(charges.GetCharges(effect), Is.EqualTo(1));
+        enemyHealth.TakeDamage(20);
+        Bombs().Single().Advance(.5f);
+        Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(effect == PotionEffect.Savia ? 95 : 80));
+        Assert.That(enemy.GetComponent<PotionCombatEffects>().SpeedFactor,
+            Is.EqualTo(effect == PotionEffect.Escarcha ? .75f : 1f));
         Assert.That(Capture, Is.Null);
     }
 
@@ -261,8 +360,11 @@ public class PotionThrowControllerTests
         AssertNoThrow();
         Assert.That(charges.TrySelectNext(), Is.True);
         Throw();
-        AssertNoThrow();
-        Assert.That(charges.GetCharges(PotionEffect.Escarcha), Is.EqualTo(2));
+        Assert.That(charges.RemainingCharges, Is.EqualTo(3));
+        Assert.That(charges.GetCharges(PotionEffect.Escarcha), Is.EqualTo(1));
+        Bombs().Single().Advance(.5f);
+        Assert.That(enemyHealth.CurrentHealth, Is.EqualTo(100));
+        Assert.That(enemy.GetComponent<PotionCombatEffects>().SpeedFactor, Is.EqualTo(.75f));
         Assert.That(Capture, Is.Null);
     }
 
@@ -274,9 +376,9 @@ public class PotionThrowControllerTests
         Assert.That(Capture, Is.Null);
         Assert.That(charges.TrySelectNext(), Is.True);
         Throw();
-        Assert.That(Bombs(), Has.Length.EqualTo(1));
+        Assert.That(Bombs(), Has.Length.EqualTo(2));
         Assert.That(charges.RemainingCharges, Is.EqualTo(2));
-        Assert.That(charges.GetCharges(PotionEffect.Escarcha), Is.EqualTo(2));
+        Assert.That(charges.GetCharges(PotionEffect.Escarcha), Is.EqualTo(1));
         Assert.That(Capture, Is.Null);
     }
 
@@ -326,7 +428,7 @@ public class PotionThrowControllerTests
     }
 
     [Test]
-    public void LastFireThrow_AutomaticallySelectsFrost_WithoutImplementingItsEffect()
+    public void LastFireThrow_AutomaticallySelectsFrost_AndCanLaunchIt()
     {
         charges.Initialize(1);
         var frost = new PotionFormula(PotionBase.Bomba, PotionEffect.Escarcha);
@@ -335,8 +437,8 @@ public class PotionThrowControllerTests
         Assert.That(charges.SelectedFormula, Is.SameAs(frost));
         Throw();
         Assert.That(charges.RemainingCharges, Is.Zero);
-        Assert.That(charges.GetCharges(PotionEffect.Escarcha), Is.EqualTo(2));
-        Assert.That(Bombs(), Has.Length.EqualTo(1));
+        Assert.That(charges.GetCharges(PotionEffect.Escarcha), Is.EqualTo(1));
+        Assert.That(Bombs(), Has.Length.EqualTo(2));
     }
 
     [Test]

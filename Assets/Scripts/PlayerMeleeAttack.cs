@@ -79,7 +79,8 @@ public sealed class PlayerMeleeAttack : MonoBehaviour
         {
             Health health = hit.GetComponentInParent<Health>();
             if (health == null || health.transform == transform ||
-                health.transform.IsChildOf(transform) || !damaged.Add(health))
+                health.transform.IsChildOf(transform) || (effects != null && !effects.AllowsMeleeTarget(health)) ||
+                !damaged.Add(health))
                 continue;
             int healthBefore = health.CurrentHealth;
             if (ownHealth != null && ownHealth.IsDead) break;
